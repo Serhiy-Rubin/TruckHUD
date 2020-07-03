@@ -781,6 +781,22 @@ function doDialog()
                         menu[4][1] = "SMS » " .. pair_mode_name .. "[" .. pair_mode_id .. "]"
                         pair_mode = true
                         menu[4].run = true
+                        sampAddChatMessage(
+                            "Установлен напарник " ..
+                                pair_mode_name ..
+                                    "[" .. pair_mode_id .. "]" .. ". Теперь вы можете пользоваться картой.",
+                            -1
+                        )
+                        sampAddChatMessage(
+                            string.format(
+                                "Клавиши активации. Карта за рулем: %s, карта: %s, зум-карта: %s, смена режима ZM: %s",
+                                inifiles.Settings.Key3:gsub("VK_", ""),
+                                inifiles.Settings.Key4:gsub("VK_", ""),
+                                inifiles.Settings.Key5:gsub("VK_", ""),
+                                inifiles.Settings.Key6:gsub("VK_", "")
+                            ),
+                            -1
+                        )
                     else
                         pair_mode = false
                         menu[4].run = false
