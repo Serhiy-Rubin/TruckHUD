@@ -164,6 +164,7 @@ function main()
     local x1, y1 = convertGameScreenCoordsToWindowScreenCoords(14.992679595947, 274.75)
     local x2, y2 = convertGameScreenCoordsToWindowScreenCoords(146.17861938477, 345.91665649414)
     local x3, y3 = convertGameScreenCoordsToWindowScreenCoords(529.42901611328, 158.08332824707)
+
     inifiles =
         inicfg.load(
         {
@@ -188,6 +189,10 @@ function main()
                 Key = 90,
                 Key1 = "VK_RBUTTON",
                 Key2 = "VK_Z",
+                Key3 = "VK_LBUTTON",
+                Key4 = "VK_M",
+                Key5 = "VK_OEM_COMMA",
+                Key6 = "VK_K",
                 Binder = true,
                 SMSpara = false,
                 ColorPara = "ff9900",
@@ -215,14 +220,6 @@ function main()
             },
             map = {
                 sqr = false
-            },
-            transponder = {
-                allow_occupied = true,
-                allow_unlocked = false,
-                catch_srp_start = true,
-                catch_srp_stop = true,
-                catch_srp_gz = true,
-                delay = 5999
             },
             Stats = {
                 Hour = true,
@@ -647,6 +644,18 @@ function doDialog()
                 end
                 if str:find("Кнопка для работы меню без фуры") then
                     ShowDialog1(4, 2)
+                end
+                if str:find("Кнопка для fastmap за рулем трака") then
+                    ShowDialog1(4, 3)
+                end
+                if str:find("Кнопка для fastmap") then
+                    ShowDialog1(4, 4)
+                end
+                if str:find("Кнопка для zoommap") then
+                    ShowDialog1(4, 5)
+                end
+                if str:find("Кнопка для смена режима zoommap") then
+                    ShowDialog1(4, 6)
                 end
                 if str:find("Подробная статистика") then
                     ShowDialog1(5)
@@ -1617,6 +1626,14 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
 
         dialogLine[#dialogLine + 1] = "Кнопка для работы меню без фуры\t" .. inifiles.Settings.Key2:gsub("VK_", "") -- 15
 
+        dialogLine[#dialogLine + 1] = "Кнопка для fastmap за рулем трака\t" .. inifiles.Settings.Key3:gsub("VK_", "") -- 16
+
+        dialogLine[#dialogLine + 1] = "Кнопка для fastmap\t" .. inifiles.Settings.Key4:gsub("VK_", "") -- 16
+
+        dialogLine[#dialogLine + 1] = "Кнопка для zoommap\t" .. inifiles.Settings.Key5:gsub("VK_", "") -- 16
+
+        dialogLine[#dialogLine + 1] = "Кнопка для смены режима zoommap\t" .. inifiles.Settings.Key6:gsub("VK_", "") -- 16
+
         dialogLine[#dialogLine + 1] = "Подробная статистика"
 
         dialogLine[#dialogLine + 1] = "Контакты автора"
@@ -1665,7 +1682,7 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
                         end
                     end
                 until key ~= ""
-                local ini__name = (dtext == 1 and "Key1" or "Key2")
+                local ini__name = string.format("Key%d", dtext)
                 inifiles.Settings[ini__name] = key
                 inicfg.save(inifiles, AdressIni)
                 ShowDialog1(1)
