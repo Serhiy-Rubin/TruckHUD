@@ -3350,57 +3350,127 @@ function fastmap()
                     )
                 else
                     renderDrawTexture(player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1)
+                end
             end
-            if getQ(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], mapmode) or mapmode == 0 then
-                color = 0xFFdedbd2
-                if response_timestamp - pair_timestamp > 5 then
-                    if mapmode == 0 then
-                        renderFontDrawText(
-                            font,
-                            string.format("%.0f?", response_timestamp - pair_timestamp),
-                            getX(pair_table["data"]["pos"]["x"]) + 17,
-                            getY(pair_table["data"]["pos"]["y"]) + 2,
-                            color
+            if pair_table["data"] ~= nil then
+                if getQ(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], mapmode) or mapmode == 0 then
+                    color = 0xFFdedbd2
+                    if response_timestamp - pair_timestamp > 5 then
+                        if mapmode == 0 then
+                            renderFontDrawText(
+                                font8,
+                                string.format("%.0f?", response_timestamp - pair_timestamp),
+                                getX(pair_table["data"]["pos"]["x"]) + 17,
+                                getY(pair_table["data"]["pos"]["y"]) + 2,
+                                color
+                            )
+                        else
+                            renderFontDrawText(
+                                font12,
+                                string.format("%.0f?", response_timestamp - pair_timestamp),
+                                getX(pair_table["data"]["pos"]["x"]) + 31,
+                                getY(pair_table["data"]["pos"]["y"]) + 4,
+                                color
+                            )
+                        end
+                    end
+                    local n1, n2 = string.match(pair_table["data"]["sender"], "(.).+_(.).+")
+                    if n1 and n2 then
+                        if mapmode == 0 then
+                            renderFontDrawText(
+                                font8,
+                                n1 .. n2,
+                                getX(pair_table["data"]["pos"]["x"]),
+                                getY(pair_table["data"]["pos"]["y"]) + 12,
+                                0xFF00FF00
+                            )
+                        else
+                            renderFontDrawText(
+                                font12,
+                                pair_table["data"]["sender"],
+                                getX(pair_table["data"]["pos"]["x"]) - string.len(pair_table["data"]["sender"]) * 5,
+                                getY(pair_table["data"]["pos"]["y"]) + 12,
+                                0xFF00FF00
+                            )
+                        end
+                    end
+                    if pair_table["data"]["health"] ~= nil then
+                        if mapmode == 0 then
+                            renderFontDrawText(
+                                font8,
+                                pair_table["data"]["health"] .. " hp",
+                                getX(pair_table["data"]["pos"]["x"]) - 30,
+                                getY(pair_table["data"]["pos"]["y"]) + 2,
+                                0xFF00FF00
+                            )
+                        else
+                            renderFontDrawText(
+                                font12,
+                                pair_table["data"]["health"] .. " hp",
+                                getX(pair_table["data"]["pos"]["x"]) -
+                                    string.len(pair_table["data"]["health"] .. " dl") * 9.4,
+                                getY(pair_table["data"]["pos"]["y"]) + 4,
+                                0xFF00FF00
+                            )
+                        end
+                    end
+                    if pair_table["data"]["is_truck"] then
+                        renderDrawTexture(
+                            matavoz,
+                            getX(pair_table["data"]["pos"]["x"]),
+                            getY(pair_table["data"]["pos"]["y"]),
+                            iconsize,
+                            iconsize,
+                            -pair_table["data"]["heading"] + 90,
+                            -1
                         )
                     else
-                        renderFontDrawText(
-                            font12,
-                            string.format("%.0f?", response_timestamp - pair_timestamp),
-                            getX(pair_table["data"]["pos"]["x"]) + 31,
-                            getY(pair_table["data"]["pos"]["y"]) + 4,
-                            color
+                        renderDrawTexture(
+                            player,
+                            getX(pair_table["data"]["pos"]["x"]),
+                            getY(pair_table["data"]["pos"]["y"]),
+                            iconsize,
+                            iconsize,
+                            -pair_table["data"]["heading"],
+                            -1
                         )
                     end
-                end
-                if pair_table["data"]["health"] ~= nil then
-                    if mapmode == 0 then
-                        renderFontDrawText(
-                            font,
-                            pair_table["data"]["health"] .. " hp",
-                            getX(pair_table["data"]["pos"]["x"]) - 30,
-                            getY(pair_table["data"]["pos"]["y"]) + 2,
-                            color
-                        )
-                    else
-                        renderFontDrawText(
-                            font12,
-                            pair_table["data"]["health"] .. " hp",
-                            getX(pair_table["data"]["pos"]["x"]) -
-                                string.len(pair_table["data"]["health"] .. " dl") * 9.4,
-                            getY(pair_table["data"]["pos"]["y"]) + 4,
-                            color
-                        )
+                    if pair_table["data"]["trailer"]["pos"] ~= nil then
+                        if pair_table["data"]["trailer"]["model"] == 584 then
+                            renderDrawTexture(
+                                gruzNeft,
+                                getX(pair_table["data"]["trailer"]["pos"]["x"]),
+                                getY(pair_table["data"]["trailer"]["pos"]["y"]),
+                                iconsize,
+                                iconsize,
+                                -pair_table["data"]["trailer"]["heading"] + 90,
+                                -1
+                            )
+                        else
+                            if pair_table["data"]["trailer"]["pos"]["gruz"] == 2 then
+                                renderDrawTexture(
+                                    gruzUgol,
+                                    getX(pair_table["data"]["trailer"]["pos"]["x"]),
+                                    getY(pair_table["data"]["trailer"]["pos"]["y"]),
+                                    iconsize,
+                                    iconsize,
+                                    -pair_table["data"]["trailer"]["heading"] + 90,
+                                    -1
+                                )
+                            else
+                                renderDrawTexture(
+                                    gruzDerevo,
+                                    getX(pair_table["data"]["trailer"]["pos"]["x"]),
+                                    getY(pair_table["data"]["trailer"]["pos"]["y"]),
+                                    iconsize,
+                                    iconsize,
+                                    -pair_table["data"]["trailer"]["heading"] + 90,
+                                    -1
+                                )
+                            end
+                        end
                     end
                 end
-                renderDrawTexture(
-                    player,
-                    getX(pair_table["data"]["pos"]["x"]),
-                    getY(pair_table["data"]["pos"]["y"]),
-                    iconsize,
-                    iconsize,
-                    -pair_table["data"]["heading"] + 90,
-                    -1
-                )
             end
         end
     end
