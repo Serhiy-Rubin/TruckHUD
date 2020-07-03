@@ -3338,7 +3338,18 @@ function fastmap()
                 end
             end
             if getQ(x, y, mapmode) or mapmode == 0 then
-                renderDrawTexture(player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1)
+                if isTruckCar() then
+                    renderDrawTexture(
+                        matavoz,
+                        getX(x),
+                        getY(y),
+                        iconsize,
+                        iconsize,
+                        -getCharHeading(playerPed) + 90,
+                        -1
+                    )
+                else
+                    renderDrawTexture(player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1)
             end
             if getQ(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], mapmode) or mapmode == 0 then
                 color = 0xFFdedbd2
