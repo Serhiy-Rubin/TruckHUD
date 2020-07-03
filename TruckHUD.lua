@@ -3194,7 +3194,7 @@ function fastmap()
                         getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed)
              then
                 mapmode = 0
-            elseif isKeyDown(188) or mapmode ~= 0 then
+            elseif isKeyDown(vkeys[inifiles.Settings.Key5]) or mapmode ~= 0 then
                 mapmode = getMode(modX, modY)
                 if wasKeyPressed(0x25) then
                     if modY > 1 then
