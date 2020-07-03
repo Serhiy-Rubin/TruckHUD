@@ -645,14 +645,13 @@ function doDialog()
                 end
                 if str:find("Кнопка для fastmap за рулем трака") then
                     ShowDialog1(4, 3)
-                end
-                if str:find("Кнопка для fastmap") then
+                elseif str:find("Кнопка для fastmap") then
                     ShowDialog1(4, 4)
                 end
                 if str:find("Кнопка для zoommap") then
                     ShowDialog1(4, 5)
                 end
-                if str:find("Кнопка для смена режима zoommap") then
+                if str:find("Кнопка для смены режима zoommap") then
                     ShowDialog1(4, 6)
                 end
                 if str:find("Подробная статистика") then
@@ -2550,9 +2549,7 @@ function ReadLog(is, ss)
 end
 
 function isTruckCar()
-    if
-        isCharInModel(PLAYER_PED, 403) or isCharInModel(PLAYER_PED, 514) or isCharInModel(PLAYER_PED, 515)
-     then --463 ubrat or isCharInModel(PLAYER_PED, 463)
+    if isCharInModel(PLAYER_PED, 403) or isCharInModel(PLAYER_PED, 514) or isCharInModel(PLAYER_PED, 515) then --463 ubrat or isCharInModel(PLAYER_PED, 463)
         return true
     else
         return false
