@@ -123,6 +123,7 @@ local pair_table = {}
 local pair_timestamp = {}
 local pair_status = 0
 local response_timestamp = 0
+local transponder_delay = 100
 
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then
@@ -280,9 +281,10 @@ function main()
     font = renderCreateFont(inifiles.Render.FontName, inifiles.Render.FontSize, inifiles.Render.FontFlag)
     ReadLog()
 
+    --gmap area
     lua_thread.create(transponder)
-
-    init()
+    lua_thread.create(fastmap)
+    --gmap area
 
     while true do
         wait(0)
@@ -292,10 +294,6 @@ function main()
         doPair()
         doPickup()
         doMarkers()
-        if pair_mode then
-            fastmap()
-        end
-
         if script_run then
             if not sampIsScoreboardOpen() and sampIsChatVisible() and not isKeyDown(116) and not isKeyDown(121) then
                 doRenderStats()
@@ -2934,107 +2932,141 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------GMAP--------------------------------------
 --------------------------------------------------------------------------------
+delay_start = 0
 function transponder()
     while true do
         wait(0)
-        if pair_mode and pair_mode_name ~= nil then
-            delay_start = os.time()
-            wait(inifiles.transponder.delay)
-            if getActiveInterior() == 0 then
-                request_table = {}
-                local ip, port = sampGetCurrentServerAddress()
-                local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
-                x, y, z = getCharCoordinates(playerPed)
 
-                request_table["info"] = {
-                    server = ip .. ":" .. tostring(port),
-                    sender = sampGetPlayerNickname(myid),
-                    pos = {x = x, y = y, z = z},
-                    heading = getCharHeading(playerPed),
-                    health = getCharHealth(playerPed),
-                    pair_name = pair_mode_name
-                }
+        delay_start = os.clock()
+        wait(transponder_delay)
+        if getActiveInterior() == 0 then
+            request_table = {}
+            request_table["request"] = 1
+            local ip, port = sampGetCurrentServerAddress()
+            local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+            x, y, z = getCharCoordinates(playerPed)
 
-                collecting_data = false
-                wait_for_response = true
-                local response_path = os.tmpname()
-                down = false
-                downloadUrlToFile(
-                    "http://185.204.2.156:43136/" .. encodeJson(request_table),
-                    response_path,
-                    function(id, status, p1, p2)
-                        if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-                            down = true
-                        end
-                        if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                            wait_for_response = false
-                        end
-                    end
-                )
-                while wait_for_response do
-                    wait(10)
+            request_table["info"] = {
+                server = ip .. ":" .. tostring(port),
+                sender = sampGetPlayerNickname(myid),
+                pos = {x = x, y = y, z = z},
+                heading = getCharHeading(playerPed),
+                health = getCharHealth(playerPed),
+                pair_mode_name = pair_mode_name,
+                is_truck = isTruckCar(),
+                chtoto_randomnoe = os.clock(),
+                gruz = current_load
+            }
+
+            if pair_mode and pair_mode_name ~= nil then
+                request_table["info"]["pair_mode_name"] = pair_mode_name
+            else
+                request_table["info"]["pair_mode_name"] = "____"
+            end
+
+            trailer_handle = 0
+            if isCharInAnyCar(PLAYER_PED) and isTruckCar() then
+                local car = storeCarCharIsInNoSave(PLAYER_PED)
+                local ptr = getCarPointer(car)
+                local trailer = readMemory(ptr + 1224, 4, false)
+                if trailer > 0 then
+                    local trailer_handle = getVehiclePointerHandle(trailer)
+                    local _x, _y, _z = getCarCoordinates(trailer_handle)
+                    request_table["info"]["trailer"] = {
+                        heading = getCarHeading(trailer_handle),
+                        health = getCarHealth(trailer_handle),
+                        model = getCarModel(trailer_handle),
+                        pos = {x = _x, y = _y, z = _z}
+                    }
+                else
+                    request_table["info"]["trailer"] = {}
                 end
-                processing_response = true
+            else
+                request_table["info"]["trailer"] = {}
+            end
 
-                if down and doesFileExist(response_path) then
-                    local f = io.open(response_path, "r")
-                    if f then
-                        local info = decodeJson(f:read("*a"))
-                        if info == nil then
-                            sampAddChatMessage(
-                                "{ff0000}[" ..
-                                    string.upper(thisScript().name) ..
-                                        "]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
-                                0x348cb2
-                            )
-                        else
-                            if info.result == "ok" then
-                                response_timestamp = info.timestamp
-                                if info.data ~= nil then
-                                    pair_status = 200
-                                    pair_timestamp = info.timestamp
-                                    pair_table = info.data
+            collecting_data = false
+            wait_for_response = true
+            local response_path = os.tmpname()
+            down = false
+            downloadUrlToFile(
+                "http://185.204.2.156:43136/" .. encodeJson(request_table),
+                response_path,
+                function(id, status, p1, p2)
+                    if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+                        down = true
+                    end
+                    if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                        wait_for_response = false
+                    end
+                end
+            )
+            while wait_for_response do
+                wait(10)
+            end
+            processing_response = true
+
+            if down and doesFileExist(response_path) then
+                local f = io.open(response_path, "r")
+                if f then
+                    local info = decodeJson(f:read("*a"))
+                    if info == nil then
+                        sampAddChatMessage(
+                            "{ff0000}[" ..
+                                string.upper(thisScript().name) ..
+                                    "]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
+                            0x348cb2
+                        )
+                    else
+                        if info.result == "ok" then
+                            response_timestamp = info.timestamp
+                            transponder_delay = info.delay
+                            if info.data ~= nil then
+                                pair_status = 200
+                                pair_timestamp = info.data.timestamp
+                                pair_table = info.data
+                            end
+                        elseif info.result == "error" then
+                            transponder_delay = info.delay
+                            if info.reason ~= nil then
+                                if info.reason == 403 then
+                                    pair_status = 403
+                                    sampfuncsLog("ваш напарник уже спарился с кем-то другим")
                                 end
-                            elseif info.result == "error" then
-                                if info.reason ~= nil then
-                                    if info.reason == 403 then
-                                        pair_status = 403
-                                        sampfuncsLog("ваш напарник уже спарился с кем-то другим")
-                                    end
-                                    if info.reason == 404 then
-                                        pair_status = 404
-                                        sampfuncsLog("ваш напарник не найден на сервере, может он не спарился с вами?")
-                                    end
+                                if info.reason == 404 then
+                                    pair_status = 404
+                                    sampfuncsLog("ваш напарник не найден на сервере, может он не спарился с вами?")
                                 end
                             end
-                            wait_for_response = false
                         end
-                        f:close()
-                        --setClipboardText(response_path)
-                        os.remove(response_path)
+                        wait_for_response = false
                     end
-                else
-                    print(
-                        "{ff0000}[" ..
-                            string.upper(thisScript().name) ..
-                                "]: Мы не смогли получить ответ от сервера. Возможно слишком много машин, проблема с интернетом, сервер упал.",
-                        0x348cb2
-                    )
-                end
-                if doesFileExist(response_path) then
+                    f:close()
+                    --setClipboardText(response_path)
+
                     os.remove(response_path)
                 end
-                processing_response = false
+            else
+                print(
+                    "{ff0000}[" ..
+                        string.upper(thisScript().name) ..
+                            "]: Мы не смогли получить ответ от сервера. Возможно проблема с интернетом, сервером или сервер упал.",
+                    0x348cb2
+                )
             end
+            if doesFileExist(response_path) then
+                os.remove(response_path)
+            end
+            processing_response = false
         end
     end
 end
 
 function count_next()
     if getActiveInterior() == 0 then
-        local count = math.floor(settings.transponder.delay / 1000) - tonumber(os.time() - delay_start)
+        local count = (transponder_delay - (os.clock() * 1000 - delay_start * 1000)) / 1000
         if count >= 0 then
-            return tostring(count) .. "c"
+            return string.format("%0.3fс", count)
         elseif wait_for_response then
             return "WAITING FOR RESPONSE"
         elseif processing_response then
@@ -3071,6 +3103,11 @@ function init()
     end
     dn("waypoint.png")
     dn("matavoz.png")
+
+    dn("gruzDerevo.png")
+    dn("gruzUgol.png")
+    dn("gruzNeft.png")
+
     dn("pla.png")
 
     for i = 1, 16 do
@@ -3080,7 +3117,11 @@ function init()
 
     player = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/pla.png")
     matavoz = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/matavoz.png")
-    font = renderCreateFont("Impact", 8, 4)
+    gruzDerevo = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzDerevo.png")
+    gruzNeft = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzNeft.png")
+    gruzUgol = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzUgol.png")
+
+    font8 = renderCreateFont("Impact", 8, 4)
     font10 = renderCreateFont("Impact", 10, 4)
     font12 = renderCreateFont("Impact", 12, 4)
 
@@ -3133,16 +3174,28 @@ function init()
 end
 
 function fastmap()
-    if not sampIsChatInputActive() and isKeyDown(0xA4) then
-        while isKeyDown(77) or isKeyDown(188) do
-            wait(0)
+    init()
 
+    while true do
+        wait(0)
+        while pair_mode and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and
+            not isSampfuncsConsoleActive() and
+            ((isKeyDown(vkeys[inifiles.Settings.Key4]) or isKeyDown(vkeys[inifiles.Settings.Key5])) or
+                (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]) and
+                    not isKeyDown(vkeys[inifiles.Settings.Key1]) and
+                    getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed)) do
+            wait(0)
             x, y = getCharCoordinates(playerPed)
-            if not sampIsChatInputActive() and wasKeyPressed(0x4B) then
+            if not sampIsChatInputActive() and wasKeyPressed(vkeys[inifiles.Settings.Key6]) then
                 inifiles.map.sqr = not inifiles.map.sqr
                 inicfg.save(inifiles, AdressIni)
             end
-            if isKeyDown(77) then
+            if
+                isKeyDown(vkeys[inifiles.Settings.Key4]) or
+                    (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]) and
+                        not isKeyDown(vkeys[inifiles.Settings.Key1]) and
+                        getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed)
+             then
                 mapmode = 0
             elseif isKeyDown(188) or mapmode ~= 0 then
                 mapmode = getMode(modX, modY)
@@ -3189,31 +3242,33 @@ function fastmap()
 
                 if pair_table ~= {} then
                     if pair_status == 200 then
-                        local status_string =
+                        status_string =
                             string.format(
-                            "UPD: %s || STATUS: %s || Напарник: %s, он спарен с {%s}. Последние данные от напарника: %sc",
-                            count_next(),
+                            "CODE: %s || Напарник: %s, он спарен с %s. Данные устарели на: %0.2fc || UPD: %s",
                             pair_status,
-                            pair_table["sender"],
-                            pair_table["pair_name"],
-                            response_timestamp - pair_timestamp
+                            pair_table["data"]["sender"],
+                            pair_table["data"]["pair_mode_name"],
+                            response_timestamp - pair_timestamp,
+                            count_next()
                         )
                     elseif pair_status == 403 then
-                        local status_string =
+                        status_string =
                             string.format(
-                            "UPD: %s || STATUS: %s || Напарник: %s спаривается с кем-то другим",
-                            count_next(),
+                            "CODE: %s || Напарник: %s спаривается с кем-то другим || UPD: %s",
                             pair_status,
-                            pair_table["sender"]
+                            pair_mode_name,
+                            count_next()
                         )
                     elseif pair_status == 404 then
-                        local status_string =
+                        status_string =
                             string.format(
-                            "UPD: %s || STATUS: %s || Напарник: %s не найден на сервере",
-                            count_next(),
+                            "CODE: %s || Напарник: %s не найден на сервере || UPD: %s",
                             pair_status,
-                            pair_table["sender"]
+                            pair_mode_name,
+                            count_next()
                         )
+                    else
+                        status_string = string.format("CODE: %s || UPD: %s", pair_status, count_next())
                     end
                 end
 
