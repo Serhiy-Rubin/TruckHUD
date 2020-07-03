@@ -161,7 +161,7 @@ function main()
 
 	if inifiles.Settings.ad then
 		local fpath = os.getenv('TEMP') .. '\\TruckHUD-version.txt'
-		downloadUrlToFile('https://raw.githubusercontent.com/Serhiy-Rubin/locator/master/version', fpath, function(id, status, p1, p2)
+		downloadUrlToFile('https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/version', fpath, function(id, status, p1, p2)
 			if status == dlstatus.STATUS_ENDDOWNLOADDATA then
 				local f = io.open(fpath, 'r')
 				if f then
@@ -1832,7 +1832,7 @@ function sampev.onSendCommand(cmd)
 		if params:lower() == " up" then
 			lua_thread.create(function() 
 				local fpath = os.getenv('TEMP') .. '\\TruckHUD-up.txt'
-				downloadUrlToFile('http://truck.hud.xsph.ru/update', fpath, function(id, status, p1, p2)
+				downloadUrlToFile('https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/changelog', fpath, function(id, status, p1, p2)
 					if status == dlstatus.STATUS_ENDDOWNLOADDATA then
 						local f = io.open(fpath, 'r')
 						if f then
@@ -2030,9 +2030,9 @@ modX = 2
 modY = 2
 
 function dn(nam)
-    file = getGameDirectory() .. "\\moonloader\\resource\\locator\\" .. nam
+    file = getGameDirectory() .. "\\moonloader\\resource\\TruckHUD\\" .. nam
     if not doesFileExist(file) then
-        downloadUrlToFile("https://raw.githubusercontent.com/Serhiy-Rubin/locator/master/resource/locator/" .. nam, file)
+        downloadUrlToFile("https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/resource/TruckHUD/" .. nam, file)
     end
 end
 
@@ -2040,8 +2040,8 @@ function init()
     if not doesDirectoryExist(getGameDirectory() .. "\\moonloader\\resource") then
         createDirectory(getGameDirectory() .. "\\moonloader\\resource")
     end
-    if not doesDirectoryExist(getGameDirectory() .. "\\moonloader\\resource\\locator") then
-        createDirectory(getGameDirectory() .. "\\moonloader\\resource\\locator")
+    if not doesDirectoryExist(getGameDirectory() .. "\\moonloader\\resource\\TruckHUD") then
+        createDirectory(getGameDirectory() .. "\\moonloader\\resource\\TruckHUD")
     end
     dn("waypoint.png")
     dn("matavoz.png")
@@ -2052,45 +2052,45 @@ function init()
         dn(i .. "k.png")
     end
 
-    player = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/pla.png")
-    matavoz = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/matavoz.png")
+    player = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/pla.png")
+    matavoz = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/matavoz.png")
     font = renderCreateFont("Impact", 8, 4)
     font10 = renderCreateFont("Impact", 10, 4)
     font12 = renderCreateFont("Impact", 12, 4)
 
     resX, resY = getScreenResolution()
-    m1 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/1.png")
-    m2 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/2.png")
-    m3 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/3.png")
-    m4 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/4.png")
-    m5 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/5.png")
-    m6 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/6.png")
-    m7 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/7.png")
-    m8 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/8.png")
-    m9 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/9.png")
-    m10 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/10.png")
-    m11 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/11.png")
-    m12 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/12.png")
-    m13 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/13.png")
-    m14 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/14.png")
-    m15 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/15.png")
-    m16 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/16.png")
-    m1k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/1k.png")
-    m2k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/2k.png")
-    m3k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/3k.png")
-    m4k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/4k.png")
-    m5k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/5k.png")
-    m6k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/6k.png")
-    m7k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/7k.png")
-    m8k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/8k.png")
-    m9k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/9k.png")
-    m10k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/10k.png")
-    m11k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/11k.png")
-    m12k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/12k.png")
-    m13k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/13k.png")
-    m14k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/14k.png")
-    m15k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/15k.png")
-    m16k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/locator/16k.png")
+    m1 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/1.png")
+    m2 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/2.png")
+    m3 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/3.png")
+    m4 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/4.png")
+    m5 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/5.png")
+    m6 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/6.png")
+    m7 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/7.png")
+    m8 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/8.png")
+    m9 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/9.png")
+    m10 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/10.png")
+    m11 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/11.png")
+    m12 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/12.png")
+    m13 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/13.png")
+    m14 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/14.png")
+    m15 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/15.png")
+    m16 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/16.png")
+    m1k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/1k.png")
+    m2k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/2k.png")
+    m3k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/3k.png")
+    m4k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/4k.png")
+    m5k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/5k.png")
+    m6k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/6k.png")
+    m7k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/7k.png")
+    m8k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/8k.png")
+    m9k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/9k.png")
+    m10k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/10k.png")
+    m11k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/11k.png")
+    m12k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/12k.png")
+    m13k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/13k.png")
+    m14k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/14k.png")
+    m15k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/15k.png")
+    m16k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/16k.png")
     if resX > 1024 and resY >= 1024 then
         bX = (resX - 1024) / 2
         bY = (resY - 1024) / 2
