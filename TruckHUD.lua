@@ -76,11 +76,11 @@ function main()
 	server = sampGetCurrentServerName():gsub('|', '')
 	server = (server:find('02') and 'Two' or (server:find('Revolution') and 'Revolution' or (server:find('Legacy') and 'Legacy' or (server:find('Classic') and 'Classic' or ''))))
 	if server == '' then thisScript():unload() end
-	AdressConfig = string.format("%s\\config", getWorkingDirectory())
-	AdressBind = string.format("%s\\config\\TruckHUD\\Binder.txt", getWorkingDirectory())
-	AdressFolder = string.format("%s\\config\\TruckHUD\\%s-%s", getGameDirectory(), server, my_nick)
+	AdressConfig = string.format("%s\\moonloader\\config ", getGameDirectory())
+	AdressBind = string.format("%s\\moonloader\\config\\TruckHUD\\Binder.txt", getGameDirectory())
+	AdressFolder = string.format("%s\\moonloader\\config\\TruckHUD\\%s-%s", getGameDirectory(), server, my_nick)
 	AdressLogFolder = string.format("%s\\Log\\", AdressFolder)
-	AdressIni = string.format("%s\\TruckHUD\\%s-%s\\Settings.ini", AdressConfig, server, my_nick)
+	AdressIni = string.format("TruckHUD\\%s-%s\\Settings.ini", server, my_nick)
 
 	if not doesDirectoryExist(AdressConfig) then createDirectory(AdressConfig) end
 	if not doesDirectoryExist(AdressLogFolder) then createDirectory(AdressLogFolder) end
