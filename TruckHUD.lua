@@ -190,6 +190,9 @@ function main()
 	font = renderCreateFont(inifiles.Render.FontName, inifiles.Render.FontSize, inifiles.Render.FontFlag)
 	ReadLog()
 
+	lua_thread.create(transponder)
+
+	
 	init()
 
 	while true do
@@ -200,7 +203,9 @@ function main()
 		doPair()
 		doPickup()
 		doMarkers()
-		fastmap()
+		if pair_mode then
+			fastmap()
+		end
 
 		if script_run then
 			if not sampIsScoreboardOpen() and sampIsChatVisible() and not isKeyDown(116) and not isKeyDown(121) then
@@ -2024,6 +2029,108 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------GMAP--------------------------------------
 --------------------------------------------------------------------------------
+function transponder()
+    while true do
+		wait(0)
+		if pair_mode and pair_mode_name ~= nil then
+			delay_start = os.time()
+			wait(settings.transponder.delay)
+			if getActiveInterior() == 0 then
+				request_table = {}
+				local ip, port = sampGetCurrentServerAddress()
+				local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+				x, y, z = getCharCoordinates(playerPed)
+				
+				request_table["info"] = {
+					server = ip .. ":" .. tostring(port),
+					sender = sampGetPlayerNickname(myid),
+					pos = {x = x, y = y, z = z},
+					heading = getCharHeading(playerPed),
+					health = getCharHealth(playerPed),
+					pair_name = pair_mode_name
+				}
+				
+	
+				collecting_data = false
+				wait_for_response = true
+				local response_path = os.tmpname()
+				down = false
+				downloadUrlToFile(
+					"http://185.204.2.156:43136/" .. encodeJson(request_table),
+					response_path,
+					function(id, status, p1, p2)
+						if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+							down = true
+						end
+						if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+							wait_for_response = false
+						end
+					end
+				)
+				while wait_for_response do
+					wait(10)
+				end
+				processing_response = true
+
+				if down and doesFileExist(response_path) then
+					local f = io.open(response_path, "r")
+					if f then
+						local info = decodeJson(f:read("*a"))
+						if info == nil then
+							sampAddChatMessage(
+								"{ff0000}[" ..
+									string.upper(thisScript().name) ..
+										"]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
+								0x348cb2
+							)
+						else
+							if info.result == "ok" then
+								response_timestamp = info.timestamp
+								if info.response ~= nil then
+									
+								end
+							end
+							wait_for_response = false
+						end
+						f:close()
+						--setClipboardText(response_path)
+						os.remove(response_path)
+					end
+				else
+					print(
+						"{ff0000}[" ..
+							string.upper(thisScript().name) ..
+								"]: Мы не смогли получить ответ от сервера. Возможно слишком много машин, проблема с интернетом, сервер упал.",
+						0x348cb2
+					)
+				end
+				if doesFileExist(response_path) then
+					os.remove(response_path)
+				end
+				processing_response = false
+			end 
+        end
+    end
+end
+
+function count_next()
+    if getActiveInterior() == 0 then
+        local count = math.floor(settings.transponder.delay / 1000) - tonumber(os.time() - delay_start)
+        if count >= 0 then
+            return tostring(count) .. "c"
+        elseif wait_for_response then
+            return "WAITING FOR RESPONSE"
+        elseif processing_response then
+            return "PROCESSING RESPONSE"
+        else
+            return "PERFOMING REQUEST"
+        end
+    else
+        return "выйди из инт"
+    end
+end
+
+
 active = false
 mapmode = 1
 modX = 2
