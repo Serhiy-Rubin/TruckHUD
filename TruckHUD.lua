@@ -2,12 +2,28 @@ script_name("TruckHUD")
 script_author("Serhiy_Rubin")
 script_version("03/04/2020")
 
-local sampev, inicfg, dlstatus, vkeys, ffi =
+function try(f, catch_f)
+  local status, exception = pcall(f)
+  if not status then
+    catch_f(exception)
+  end
+end
+
+try(function()
+ sampev, inicfg, dlstatus, vkeys, ffi =
     require "lib.samp.events",
     require "inicfg",
     require("moonloader").download_status,
     require "lib.vkeys",
     require("ffi")
+	
+  end, function(e)
+    sampAddChatMessage(">> Произошла ошибка на этапе загрузки библиотек. Возможно у вас нет SAMP.Lua", 0xff0000)
+    sampAddChatMessage(">> Официальная страница Truck HUD: https://vk.com/rubin.mods",0xff0000)
+	sampAddChatMessage(e, -1)
+	thisScript():unload()
+  end)
+	
 ffi.cdef [[ bool SetCursorPos(int X, int Y); ]]
 
 ------- 3d text
@@ -51,7 +67,7 @@ local menu = {
     [11] = {[1] = "Восстановить груз", [2] = "Восстановить груз", run = false}
 }
 
-local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, BinderMode = false, "", "", -1, "Nick_Name", true
+local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, BinderMode = false, "", "", -1, "Нет", true
 local script_run, control, auto, autoh, wait_auto, pos = false, false, false, true, 0, {[1] = false, [2] = false, [3] = false}
 local price_frozen, timer, antiflood, current_load, load_location, unload_location = false, 0, 0, 0, false, false
 local my_nick, server, timer_min, timer_sec, workload = "", "", 0, 0, 0
@@ -75,6 +91,9 @@ local pair_timestamp = {}
 local pair_status = 0
 local response_timestamp = 0
 local transponder_delay = 500
+local ScriptTerminate = false
+
+stop_downloading_1, stop_downloading_2, stop_downloading_3, stop_downloading_4, stop_downloading_5 = false, false, false, false, false
 
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
@@ -181,10 +200,16 @@ function main()
 
     if inifiles.Settings.ad then
         local fpath = os.getenv("TEMP") .. "\\TruckHUD-version.txt"
-        downloadUrlToFile(
+        download_id_1 = downloadUrlToFile(
             "https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/version",
             fpath,
             function(id, status, p1, p2)
+				if stop_downloading_1 then
+					stop_downloading_1 = false
+					download_id_1 = nil
+					print("Завершаю загрузчик n1")
+					return false
+				end
                 if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                     local f = io.open(fpath, "r")
                     if f then
@@ -591,19 +616,11 @@ function doDialog()
                     inicfg.save(inifiles, AdressIni)
                     ShowDialog1(1)
                 end
-                if str:find("Кнопка для работы меню без фуры") then
+                if str:find("Кнопка для работы без фуры") then
                     ShowDialog1(4, 2)
                 end
-                if str:find("Кнопка для fastmap за рулем трака") then
+                if str:find("Кнопка для отображения карты") then
                     ShowDialog1(4, 3)
-                elseif str:find("Кнопка для fastmap") then
-                    ShowDialog1(4, 4)
-                end
-                if str:find("Кнопка для zoommap") then
-                    ShowDialog1(4, 5)
-                end
-                if str:find("Кнопка для смены режима zoommap") then
-                    ShowDialog1(4, 6)
                 end
                 if str:find("Подробная статистика") then
                     ShowDialog1(5)
@@ -1123,10 +1140,16 @@ function doRenderMon()
         mon_upd = false
         mon_kd = os.time()
         local fpath = os.getenv("TEMP") .. "\\TruckHUD-monitoring.txt"
-        downloadUrlToFile(
+        download_id_2 = downloadUrlToFile(
             "http://truck.hud.xsph.ru/" .. server,
             fpath,
             function(id, status, p1, p2)
+				if stop_downloading_2 then
+					stop_downloading_2 = false
+					download_id_2 = nil
+					print("Завершаю загрузчик n2")
+					return false
+				end
                 if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                     local f = io.open(fpath, "r")
                     if f then
@@ -1576,15 +1599,9 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
 
         dialogLine[#dialogLine + 1] = "Кнопка отображения меню\t" .. inifiles.Settings.Key1:gsub("VK_", "") -- 14
 
-        dialogLine[#dialogLine + 1] = "Кнопка для работы меню без фуры\t" .. inifiles.Settings.Key2:gsub("VK_", "") -- 15
+        dialogLine[#dialogLine + 1] = "Кнопка для работы без фуры\t" .. inifiles.Settings.Key2:gsub("VK_", "") -- 15
 
-        dialogLine[#dialogLine + 1] = "Кнопка для fastmap за рулем трака\t" .. inifiles.Settings.Key3:gsub("VK_", "") -- 16
-
-        dialogLine[#dialogLine + 1] = "Кнопка для fastmap\t" .. inifiles.Settings.Key4:gsub("VK_", "") -- 16
-
-        dialogLine[#dialogLine + 1] = "Кнопка для zoommap\t" .. inifiles.Settings.Key5:gsub("VK_", "") -- 16
-
-        dialogLine[#dialogLine + 1] = "Кнопка для смены режима zoommap\t" .. inifiles.Settings.Key6:gsub("VK_", "") -- 16
+        dialogLine[#dialogLine + 1] = "Кнопка для отображения карты\t" .. inifiles.Settings.Key3:gsub("VK_", "") -- 16
 
         dialogLine[#dialogLine + 1] = "Подробная статистика"
 
@@ -2542,10 +2559,16 @@ function sampev.onSendCommand(cmd)
             lua_thread.create(
                 function()
                     local fpath = os.getenv("TEMP") .. "\\TruckHUD-up.txt"
-                    downloadUrlToFile(
+                    download_id_3 = downloadUrlToFile(
                         "https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/changelog",
                         fpath,
                         function(id, status, p1, p2)
+							if stop_downloading_3 then
+								stop_downloading_3 = false
+								download_id_3 = nil
+								print("Завершаю загрузчик n3")
+								return false
+							end
                             if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                                 local f = io.open(fpath, "r")
                                 if f then
@@ -2873,18 +2896,6 @@ function drawClickableText(text, posX, posY)
     end
 end
 
-function onScriptTerminate()
-    for k, v in pairs(pickupLoad) do
-        if v.pickup ~= nil then
-            if doesPickupExist(v.pickup) then
-                removePickup(v.pickup)
-                v.pickup = nil
-            end
-        end
-    end
-    deleteMarkers()
-end
-
 --------------------------------------------------------------------------------
 --------------------------------------GMAP--------------------------------------
 --------------------------------------------------------------------------------
@@ -2902,6 +2913,17 @@ function transponder()
             local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
             x, y, z = getCharCoordinates(playerPed)
             local result, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+			
+			local my_car = getCarCharIsUsing(playerPed)
+
+			local carmodel = -1
+			local carhealth = -1
+			
+			if my_car ~= -1 then
+				carmodel = getCarModel(my_car)
+				carhealth = getCarHealth(my_car)
+			end
+			
             request_table["info"] = {
                 server = ip .. ":" .. tostring(port),
                 sender = sampGetPlayerNickname(myid),
@@ -2914,7 +2936,9 @@ function transponder()
                 gruz = current_load,
                 skill = inifiles.Trucker.Skill,
                 id = myid,
-                paraid = pair_mode_id
+                paraid = pair_mode_id,
+				carmodel = carmodel,
+				carhealth = carhealth,
             }
 
             if pair_mode and pair_mode_name ~= nil then
@@ -2948,13 +2972,16 @@ function transponder()
             wait_for_response = true
             local response_path = os.tmpname()
             down = false
-            downloadUrlToFile(
+            download_id_4 = downloadUrlToFile(
                 "http://185.204.2.156:43136/" .. encodeJson(request_table),
                 response_path,
                 function(id, status, p1, p2)
-                    if ScriptTerminate then
-                        return false
-                    end
+					if stop_downloading_4 then
+						stop_downloading_4 = false
+						download_id_4 = nil
+						print("Завершаю загрузчик n4")
+						return false
+					end
                     if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                         down = true
                     end
@@ -3197,10 +3224,16 @@ function ParaList()
     local down1 = false
     local ip, port = sampGetCurrentServerAddress()
     local response_path1 = os.tmpname()
-    downloadUrlToFile(
+    download_id_5 = downloadUrlToFile(
         "http://185.204.2.156:43136/" .. encodeJson({request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}),
         response_path1,
         function(id, status, p1, p2)
+			if stop_downloading_5 then
+				stop_downloading_5 = false
+				download_id_5 = nil
+				print("Завершаю загрузчик n5")
+				return false
+			end
             if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                 down1 = true
             end
@@ -3228,9 +3261,9 @@ function ParaList()
                 for i,s in pairs(v.data) do
                     if sserver == s and os.time() - v.timestamp < 60 and v.data.paraid ~= nil then
                         trucker_count = trucker_count + 1
-                        dialogText = string.format('%s%s[%s]\t%s\t%s\t%s[%s]\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), v.data.pair_mode_name, v.data.paraid)
+                        dialogText = string.format('%s%s[%s]\t%s\t%s\t%s\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), ( v.data.pair_mode_name == '____' and 'Нет' or v.data.pair_mode_name..'['..v.data.paraid..']'))
                     end
-                end
+                end	
             end
             sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
         else
@@ -3250,8 +3283,23 @@ function ParaList()
         os.remove(response_path1)
     end
     processing_response1 = false
-end
-
-function onScriptTerminate()
-    ScriptTerminate = true
+end 
+ 
+ function onScriptTerminate(LuaScript, quitGame)
+    if LuaScript == thisScript() then
+        stop_downloading_1 = true
+		stop_downloading_2 = true
+		stop_downloading_3 = true
+		stop_downloading_4 = true
+		stop_downloading_5 = true
+		for k, v in pairs(pickupLoad) do
+			if v.pickup ~= nil then
+				if doesPickupExist(v.pickup) then
+					removePickup(v.pickup)
+					v.pickup = nil
+				end
+			end
+		end
+		deleteMarkers()
+    end
 end
