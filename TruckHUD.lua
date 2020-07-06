@@ -2952,6 +2952,9 @@ function transponder()
                 "http://185.204.2.156:43136/" .. encodeJson(request_table),
                 response_path,
                 function(id, status, p1, p2)
+                    if ScriptTerminate then
+                        return false
+                    end
                     if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                         down = true
                     end
@@ -3250,5 +3253,5 @@ function ParaList()
 end
 
 function onScriptTerminate()
-    down = true
+    ScriptTerminate = true
 end
