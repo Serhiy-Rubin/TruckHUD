@@ -1,6 +1,7 @@
 script_name("TruckHUD")
 script_author("Serhiy_Rubin")
 script_version("03/04/2020")
+
 local sampev, inicfg, dlstatus, vkeys, ffi =
     require "lib.samp.events",
     require "inicfg",
@@ -42,73 +43,23 @@ local menu = {
     [3] = {[1] = "Авто-Доклад: {06940f}ON", [2] = "Авто-Доклад: {d10000}OFF", run = false},
     [4] = {[1] = "SMS » Serhiy_Rubin[777]", [2] = "Режим пары: {d10000}OFF", run = false},
     [5] = {[1] = "Дальнобойщики онлайн", [2] = "Дальнобойщики онлайн", run = false},
-    [6] = {[1] = "Настройки", [2] = "Настройки", run = false},
-    [7] = {[1] = "Мониторинг цен", [2] = "Мониторинг цен", run = false},
-    [8] = {[1] = "Купить груз", [2] = "Купить груз", run = false},
-    [9] = {[1] = "Продать груз", [2] = "Продать груз", run = false},
-    [10] = {[1] = "Восстановить груз", [2] = "Восстановить груз", run = false}
+    [6] = {[1] = "Дальнобойщики со скриптом", [2] = "Дальнобойщики со скриптом", run = false},
+    [7] = {[1] = "Настройки", [2] = "Настройки", run = false},
+    [8] = {[1] = "Мониторинг цен", [2] = "Мониторинг цен", run = false},
+    [9] = {[1] = "Купить груз", [2] = "Купить груз", run = false},
+    [10] = {[1] = "Продать груз", [2] = "Продать груз", run = false},
+    [11] = {[1] = "Восстановить груз", [2] = "Восстановить груз", run = false}
 }
 
-local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, BinderMode =
-    false,
-    "",
-    "",
-    999,
-    "Nick_Name",
-    true
-local script_run, control, auto, autoh, wait_auto, pos =
-    false,
-    false,
-    false,
-    true,
-    0,
-    {[1] = false, [2] = false, [3] = false}
+local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, BinderMode = false, "", "", -1, "Nick_Name", true
+local script_run, control, auto, autoh, wait_auto, pos = false, false, false, true, 0, {[1] = false, [2] = false, [3] = false}
 local price_frozen, timer, antiflood, current_load, load_location, unload_location = false, 0, 0, 0, false, false
 local my_nick, server, timer_min, timer_sec, workload = "", "", 0, 0, 0
-local mon_life, mon_kd, mon_secund, mon_time, mon_ctime, stop_thread = 0, 0, 0, 0, 0, false
+local mon_life, mon_kd, mon_secund, mon_time, mon_ctime, stop_thread, mon_upd = 0, 0, 0, 0, 0, false, false
 local log, log_files = {ReysH = 0, Reys = 0, ZPH = 0, ZP = 0, PribH = 0, Prib = 0, ZatrH = 0, Zatr = 0}, {}
-local prices_3dtext = {
-    n1 = 0,
-    n2 = 0,
-    y1 = 0,
-    y2 = 0,
-    l1 = 0,
-    l2 = 0,
-    lsn = 0,
-    lsy = 0,
-    lsl = 0,
-    sfn = 0,
-    sfy = 0,
-    sfl = 0
-}
-local prices_mon = {
-    n1 = 0,
-    n2 = 0,
-    y1 = 0,
-    y2 = 0,
-    l1 = 0,
-    l2 = 0,
-    lsn = 0,
-    lsy = 0,
-    lsl = 0,
-    sfn = 0,
-    sfy = 0,
-    sfl = 0
-}
-local prices_smon = {
-    n1 = 0,
-    n2 = 0,
-    y1 = 0,
-    y2 = 0,
-    l1 = 0,
-    l2 = 0,
-    lsn = 0,
-    lsy = 0,
-    lsl = 0,
-    sfn = 0,
-    sfy = 0,
-    sfl = 0
-}
+local prices_3dtext = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
+local prices_mon = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
+local prices_smon = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
 local delay, d = {chatMon = 0, chat = 0, skill = -1, mon = 0, load = 0, unload = 0, sms = 0, dir = 0}, {[3] = ""}
 local pickupLoad = {
     [1] = {251.32167053223, 1420.3039550781, 11.5}, -- N1
@@ -123,22 +74,14 @@ local pair_table = {}
 local pair_timestamp = {}
 local pair_status = 0
 local response_timestamp = 0
-local transponder_delay = 100
+local transponder_delay = 500
 
 function main()
-    if not isSampLoaded() or not isSampfuncsLoaded() then
-        return
-    end
-    while not isSampAvailable() do
-        wait(0)
-    end
+    if not isSampLoaded() or not isSampfuncsLoaded() then return end
+    while not isSampAvailable() do wait(0) end
 
-    repeat
-        wait(0)
-    until sampGetCurrentServerName() ~= "SA-MP"
-    repeat
-        wait(0)
-    until sampGetCurrentServerName():find("Samp%-Rp.Ru")
+    repeat wait(0) until sampGetCurrentServerName() ~= "SA-MP"
+    repeat wait(0) until sampGetCurrentServerName():find("Samp%-Rp.Ru")
 
     local _, my_id = sampGetPlayerIdByCharHandle(PLAYER_PED)
     my_nick = sampGetPlayerNickname(my_id)
@@ -192,8 +135,8 @@ function main()
                 Key2 = "VK_Z",
                 Key3 = "VK_LBUTTON",
                 Key4 = "VK_M",
-                Key5 = "VK_OEM_COMMA",
-                Key6 = "VK_K",
+                Key5 = "VK_K",
+                Key6 = "VK_OEM_COMMA",
                 Binder = true,
                 SMSpara = false,
                 ColorPara = "ff9900",
@@ -284,6 +227,8 @@ function main()
     --gmap area
     lua_thread.create(transponder)
     lua_thread.create(fastmap)
+
+
     --gmap area
 
     while true do
@@ -311,6 +256,7 @@ function doControl()
             not sampIsDialogActive() and
             not sampIsScoreboardOpen()
      then
+        dialogActiveClock = os.time() 
         sampSetCursorMode(3)
         local X, Y = getScreenResolution()
         if not control then
@@ -320,7 +266,7 @@ function doControl()
         control = true
         local plus = (renderGetFontDrawHeight(font) + (renderGetFontDrawHeight(font) / 10))
         Y = ((Y / 2.2) - (renderGetFontDrawHeight(font) * 3))
-        for i = 1, 10 do
+        for i = 1, 11 do
             local string_render = (menu[i].run and menu[i][1] or menu[i][2])
             if drawClickableText(string_render, ((X / 2) - (renderGetFontDrawTextLength(font, string_render) / 2)), Y) then
                 if i == 1 then
@@ -351,18 +297,23 @@ function doControl()
                     delay.dir = 1
                 end
                 if i == 6 then
-                    ShowDialog1(1)
+                    lua_thread.create(function()
+                        ParaList()
+                    end)
                 end
                 if i == 7 then
-                    sampSendChat("/truck mon")
+                    ShowDialog1(1)
                 end
                 if i == 8 then
-                    sampSendChat("/truck load " .. GetGruz())
+                    sampSendChat("/truck mon")
                 end
                 if i == 9 then
-                    sampSendChat("/truck unload")
+                    sampSendChat("/truck load " .. GetGruz())
                 end
                 if i == 10 then
+                    sampSendChat("/truck unload")
+                end
+                if i == 11 then
                     sampSendChat("/truck trailer")
                 end
             end
@@ -378,7 +329,7 @@ function doControl()
                 menu[4].run = false
             end
             Y = Y + plus
-            if i == 6 then
+            if i == 7 then
                 Y = Y + plus
             end
         end
@@ -722,7 +673,7 @@ function doDialog()
     end
     if caption == "Truck-HUD: Статистика" then
         if result then
-            if button == 1 then
+            if button == 1 and log_files[list] ~= nil then
                 ReadLog(AdressLogFolder .. log_files[list], log_files[list])
             else
                 ShowDialog1(1)
@@ -777,27 +728,14 @@ function doDialog()
                 if string.find(input, "(%d+)") then
                     pair_mode_id = tonumber(string.match(input, "(%d+)"))
                     if sampIsPlayerConnected(pair_mode_id) then
+                        error_message_send = nil
+                        para_message_send = nil
                         pair_mode_name = sampGetPlayerNickname(pair_mode_id)
                         menu[4][1] = "SMS » " .. pair_mode_name .. "[" .. pair_mode_id .. "]"
                         pair_mode = true
                         menu[4].run = true
-                        sampAddChatMessage(
-                            "Установлен напарник " ..
-                                pair_mode_name ..
-                                    "[" .. pair_mode_id .. "]" .. ". Теперь вы можете пользоваться картой.",
-                            -1
-                        )
-                        sampAddChatMessage(
-                            string.format(
-                                "Клавиши активации. Карта за рулем: %s, карта: %s, зум-карта: %s, смена режима ZM: %s",
-                                inifiles.Settings.Key3:gsub("VK_", ""),
-                                inifiles.Settings.Key4:gsub("VK_", ""),
-                                inifiles.Settings.Key5:gsub("VK_", ""),
-                                inifiles.Settings.Key6:gsub("VK_", "")
-                            ),
-                            -1
-                        )
                     else
+                        pair_mode_id = -1
                         pair_mode = false
                         menu[4].run = false
                         sampAddChatMessage("Ошибка! Игрок под этим ID не в сети.", -1)
@@ -1159,7 +1097,7 @@ function doRenderMon()
     end
     local X, Y, c1, c2 = inifiles.Settings.X2, inifiles.Settings.Y2, inifiles.Render.Color1, inifiles.Render.Color2
     local height = renderGetFontDrawHeight(font)
-    if mon_secund ~= -2 then
+    if not mon_upd then
         mon_secund = os.time() - mon_kd
         local A1 = os.difftime(os.time(), mon_time)
         local A2 = os.difftime(os.time(), mon_ctime)
@@ -1180,8 +1118,9 @@ function doRenderMon()
     if drawClickableText(rdtext, X, Y) then
         mon_secund = 20
     end
-    if (mon_secund >= 20 or mon_secund == -2) and inifiles.Settings.MonDownload then
+    if (mon_secund >= 20 or mon_upd) and inifiles.Settings.MonDownload then
         mon_secund = 0
+        mon_upd = false
         mon_kd = os.time()
         local fpath = os.getenv("TEMP") .. "\\TruckHUD-monitoring.txt"
         downloadUrlToFile(
@@ -2151,7 +2090,7 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
             )
             delay.chatMon = 1
         end
-        mon_secund = -2
+        mon_upd = true
         if script_run then
             return false
         end
@@ -2566,7 +2505,11 @@ end
 
 function isTruckCar()
     if isCharInModel(PLAYER_PED, 403) or isCharInModel(PLAYER_PED, 514) or isCharInModel(PLAYER_PED, 515) then --463 ubrat or isCharInModel(PLAYER_PED, 463)
-        return true
+        if getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed then
+            return true
+        else
+            return false
+        end
     else
         return false
     end
@@ -2958,7 +2901,7 @@ function transponder()
             local ip, port = sampGetCurrentServerAddress()
             local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
             x, y, z = getCharCoordinates(playerPed)
-
+            local result, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
             request_table["info"] = {
                 server = ip .. ":" .. tostring(port),
                 sender = sampGetPlayerNickname(myid),
@@ -2968,7 +2911,10 @@ function transponder()
                 pair_mode_name = pair_mode_name,
                 is_truck = isTruckCar(),
                 chtoto_randomnoe = os.clock(),
-                gruz = current_load
+                gruz = current_load,
+                skill = inifiles.Trucker.Skill,
+                id = myid,
+                paraid = pair_mode_id
             }
 
             if pair_mode and pair_mode_name ~= nil then
@@ -3039,33 +2985,27 @@ function transponder()
                                 pair_timestamp = info.data.timestamp
                                 pair_table = info.data
                             end
+                            if para_message_send == nil then
+                                para_message_send = 1
+                                sampAddChatMessage("Установлен напарник "..pair_mode_name.."["..pair_mode_id.."]"..". Теперь вы можете пользоваться картой.", -1)
+                                sampAddChatMessage(string.format("Активация в фуре: %s. Без фуры: %s + %s.", inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key2:gsub("VK_", "")), -1)
+                            end
                         elseif info.result == "error" then
                             transponder_delay = info.delay
                             if info.reason ~= nil then
-                                if info.reason == 403 then
-                                    pair_status = 403
-                                    sampfuncsLog("ваш напарник уже спарился с кем-то другим")
-                                end
-                                if info.reason == 404 then
-                                    pair_status = 404
-                                    sampfuncsLog("ваш напарник не найден на сервере, может он не спарился с вами?")
+                                if info.reason == 403 or info.reason == 404 then
+                                    pair_status = info.reason
+                                    error_message(pair_mode_name.."["..pair_mode_id.."] пока не установил Вас напарником в своем TruckHUD.")
                                 end
                             end
                         end
                         wait_for_response = false
                     end
                     f:close()
-                    --setClipboardText(response_path)
-
                     os.remove(response_path)
                 end
             else
-                print(
-                    "{ff0000}[" ..
-                        string.upper(thisScript().name) ..
-                            "]: Мы не смогли получить ответ от сервера. Возможно проблема с интернетом, сервером или сервер упал.",
-                    0x348cb2
-                )
+                error_message('Сервер не отвечает, напишите о проблеме в группу vk.com/rubin.mods')
             end
             if doesFileExist(response_path) then
                 os.remove(response_path)
@@ -3075,27 +3015,29 @@ function transponder()
     end
 end
 
+function error_message(text)
+    if error_message_send == nil then
+        error_message_send = 1
+        sampAddChatMessage(text, -1)
+    end
+end
+
 function count_next()
     if getActiveInterior() == 0 then
         local count = (transponder_delay - (os.clock() * 1000 - delay_start * 1000)) / 1000
         if count >= 0 then
             return string.format("%0.3fс", count)
         elseif wait_for_response then
-            return "WAITING FOR RESPONSE"
+            return " " -- WAITING FOR RESPONSE
         elseif processing_response then
-            return "PROCESSING RESPONSE"
+            return " " -- PROCESSING RESPONSE
         else
-            return "PERFOMING REQUEST"
+            return " " -- PERFOMING REQUEST
         end
     else
         return "выйди из инт"
     end
 end
-
-active = false
-mapmode = 1
-modX = 2
-modY = 2
 
 function dn(nam)
     file = getGameDirectory() .. "\\moonloader\\resource\\TruckHUD\\" .. nam
@@ -3114,29 +3056,17 @@ function init()
     if not doesDirectoryExist(getGameDirectory() .. "\\moonloader\\resource\\TruckHUD") then
         createDirectory(getGameDirectory() .. "\\moonloader\\resource\\TruckHUD")
     end
-    dn("waypoint.png")
-    dn("matavoz.png")
-
-    dn("gruzDerevo.png")
-    dn("gruzUgol.png")
-    dn("gruzNeft.png")
-
+    dn("truck.png")
     dn("pla.png")
 
     for i = 1, 16 do
         dn(i .. ".png")
-        dn(i .. "k.png")
     end
 
     player = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/pla.png")
-    matavoz = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/matavoz.png")
-    gruzDerevo = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzDerevo.png")
-    gruzNeft = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzNeft.png")
-    gruzUgol = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/gruzUgol.png")
+    truck = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/truck.png")
 
-    font8 = renderCreateFont("Impact", 8, 4)
-    font10 = renderCreateFont("Impact", 10, 4)
-    font12 = renderCreateFont("Impact", 12, 4)
+    font10 = renderCreateFont("Segoe UI", 10, 13)
 
     resX, resY = getScreenResolution()
     m1 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/1.png")
@@ -3155,34 +3085,22 @@ function init()
     m14 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/14.png")
     m15 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/15.png")
     m16 = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/16.png")
-    m1k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/1k.png")
-    m2k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/2k.png")
-    m3k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/3k.png")
-    m4k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/4k.png")
-    m5k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/5k.png")
-    m6k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/6k.png")
-    m7k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/7k.png")
-    m8k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/8k.png")
-    m9k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/9k.png")
-    m10k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/10k.png")
-    m11k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/11k.png")
-    m12k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/12k.png")
-    m13k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/13k.png")
-    m14k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/14k.png")
-    m15k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/15k.png")
-    m16k = renderLoadTextureFromFile(getGameDirectory() .. "/moonloader/resource/TruckHUD/16k.png")
+
     if resX > 1024 and resY >= 1024 then
         bX = (resX - 1024) / 2
         bY = (resY - 1024) / 2
         size = 1024
+        iconsize = 32
     elseif resX > 720 and resY >= 720 then
         bX = (resX - 720) / 2
         bY = (resY - 720) / 2
         size = 720
+        iconsize = 24
     else
         bX = (resX - 512) / 2
         bY = (resY - 512) / 2
         size = 512
+        iconsize = 16
     end
 end
 
@@ -3191,493 +3109,146 @@ function fastmap()
 
     while true do
         wait(0)
-        while pair_mode and not sampIsChatInputActive() and not sampIsDialogActive() and not sampIsScoreboardOpen() and
-            not isSampfuncsConsoleActive() and
-            ((isKeyDown(vkeys[inifiles.Settings.Key4]) or isKeyDown(vkeys[inifiles.Settings.Key5])) or
-                (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]) and
-                    not isKeyDown(vkeys[inifiles.Settings.Key1]) and
-                    getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed)) do
-            wait(0)
-            x, y = getCharCoordinates(playerPed)
+
+        if sampIsDialogActive() then 
+            dialogActiveClock = os.time() 
+        end
+
+        if  pair_mode and
+            not sampIsDialogActive() and 
+            (os.time() - dialogActiveClock) > 1 and 
+            not sampIsScoreboardOpen() and
+            not isSampfuncsConsoleActive() and 
+            (isKeyDown(vkeys[inifiles.Settings.Key3]) and isKeyDown(vkeys[inifiles.Settings.Key2]) or (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]))) 
+        then
+            local x, y = getCharCoordinates(playerPed)
             if not sampIsChatInputActive() and wasKeyPressed(vkeys[inifiles.Settings.Key6]) then
                 inifiles.map.sqr = not inifiles.map.sqr
                 inicfg.save(inifiles, AdressIni)
             end
-            if
-                isKeyDown(vkeys[inifiles.Settings.Key4]) or
-                    (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]) and
-                        not isKeyDown(vkeys[inifiles.Settings.Key1]) and
-                        getDriverOfCar(getCarCharIsUsing(playerPed)) == playerPed)
-             then
-                mapmode = 0
-            elseif isKeyDown(vkeys[inifiles.Settings.Key5]) or mapmode ~= 0 then
-                mapmode = getMode(modX, modY)
-                if wasKeyPressed(0x25) then
-                    if modY > 1 then
-                        modY = modY - 1
-                    end
-                elseif wasKeyPressed(0x27) then
-                    if modY < 3 then
-                        modY = modY + 1
-                    end
-                elseif wasKeyPressed(0x26) then
-                    if modX < 3 then
-                        modX = modX + 1
-                    end
-                elseif wasKeyPressed(0x28) then
-                    if modX > 1 then
-                        modX = modX - 1
-                    end
+            renderDrawTexture(m1, bX, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m2, bX + size / 4, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m3, bX + 2 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m4, bX + 3 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+
+            renderDrawTexture(m5, bX, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m6, bX + size / 4, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m7, bX + 2 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m8, bX + 3 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+
+            renderDrawTexture(m9, bX, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m10, bX + size / 4, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m11, bX + 2 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m12, bX + 3 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+
+            renderDrawTexture(m13, bX, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m14, bX + size / 4, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m15, bX + 2 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+            renderDrawTexture(m16, bX + 3 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+
+            renderDrawBoxWithBorder(bX, bY + size - size / 42, size, size / 45, -1, 2, -2)
+
+            if pair_table ~= {} then
+                if pair_status == 200 then
+                    status_string = string.format( "CODE: %s || Синхронизированы с %s. Данные устарели на: %0.2fc || UPD: %s", pair_status, pair_table["data"]["sender"], response_timestamp - pair_timestamp, count_next() )
+                else
+                    status_string = string.format("CODE: %s || UPD: %s", pair_status, count_next())
                 end
             end
-            if mapmode == 0 or mapmode == -1 then
-                renderDrawTexture(m1, bX, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m2, bX + size / 4, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m3, bX + 2 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m4, bX + 3 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
 
-                renderDrawTexture(m5, bX, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m6, bX + size / 4, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m7, bX + 2 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m8, bX + 3 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-
-                renderDrawTexture(m9, bX, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m10, bX + size / 4, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m11, bX + 2 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m12, bX + 3 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-
-                renderDrawTexture(m13, bX, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m14, bX + size / 4, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m15, bX + 2 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-                renderDrawTexture(m16, bX + 3 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-
-                renderDrawBoxWithBorder(bX, bY + size - size / 42, size, size / 42, -1, 2, -2)
-
-                if pair_table ~= {} then
-                    if pair_status == 200 then
-                        status_string =
-                            string.format(
-                            "CODE: %s || Напарник: %s, он спарен с %s. Данные устарели на: %0.2fc || UPD: %s",
-                            pair_status,
-                            pair_table["data"]["sender"],
-                            pair_table["data"]["pair_mode_name"],
-                            response_timestamp - pair_timestamp,
-                            count_next()
-                        )
-                    elseif pair_status == 403 then
-                        status_string =
-                            string.format(
-                            "CODE: %s || Напарник: %s спаривается с кем-то другим || UPD: %s",
-                            pair_status,
-                            pair_mode_name,
-                            count_next()
-                        )
-                    elseif pair_status == 404 then
-                        status_string =
-                            string.format(
-                            "CODE: %s || Напарник: %s не найден на сервере || UPD: %s",
-                            pair_status,
-                            pair_mode_name,
-                            count_next()
-                        )
-                    else
-                        status_string = string.format("CODE: %s || UPD: %s", pair_status, count_next())
-                    end
-                end
-
-                renderFontDrawText(font10, status_string, bX, bY + size - size / 45, 0xFF00FF00)
-
-                if size == 1024 then
-                    iconsize = 16
-                end
-                if size == 720 then
-                    iconsize = 12
-                end
-                if size == 512 then
-                    iconsize = 10
-                end
+            renderFontDrawText(font10, status_string, bX, (bY + size - size / 45) - (renderGetFontDrawHeight(font10) / 4), 0xFF00FF00)
+            
+            if isTruckCar() then
+                renderDrawTexture( truck, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed) + 90, -1 )
             else
-                if size == 1024 then
-                    iconsize = 32
-                end
-                if size == 720 then
-                    iconsize = 24
-                end
-                if size == 512 then
-                    iconsize = 16
-                end
+                renderDrawTexture( player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1 )
             end
-            if mapmode == 1 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m9k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m13k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m14k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m9, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m13, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m14, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 2 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m10k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m14k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m15k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m10, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m14, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m15, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 3 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m11k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m12k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m15k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m16k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m11, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m12, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m15, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m16, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 4 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m5k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m9k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m5, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m9, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 5 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m6k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m6, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m10, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 6 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m7k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m8k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m12k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m7, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m8, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m11, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m12, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 7 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m1k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m2k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m5k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m1, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m2, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m5, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 8 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m2k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m3k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m2, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m3, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m6, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if mapmode == 9 then
-                if inifiles.map.sqr then
-                    renderDrawTexture(m3k, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m4k, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7k, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m8k, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                else
-                    renderDrawTexture(m3, bX, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m4, bX + size / 2, bY, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m7, bX, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                    renderDrawTexture(m8, bX + size / 2, bY + size / 2, size / 2, size / 2, 0, 0xFFFFFFFF)
-                end
-            end
-            if getQ(x, y, mapmode) or mapmode == 0 then
-                if isTruckCar() then
-                    renderDrawTexture(
-                        matavoz,
-                        getX(x),
-                        getY(y),
-                        iconsize,
-                        iconsize,
-                        -getCharHeading(playerPed) + 90,
-                        -1
-                    )
-                else
-                    renderDrawTexture(player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1)
-                end
-            end
+
             if pair_table["data"] ~= nil then
-                if getQ(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], mapmode) or mapmode == 0 then
-                    color = 0xFFdedbd2
-                    if response_timestamp - pair_timestamp > 5 then
-                        if mapmode == 0 then
-                            renderFontDrawText(
-                                font8,
-                                string.format("%.0f?", response_timestamp - pair_timestamp),
-                                getX(pair_table["data"]["pos"]["x"]) + 17,
-                                getY(pair_table["data"]["pos"]["y"]) + 2,
-                                color
-                            )
-                        else
-                            renderFontDrawText(
-                                font12,
-                                string.format("%.0f?", response_timestamp - pair_timestamp),
-                                getX(pair_table["data"]["pos"]["x"]) + 31,
-                                getY(pair_table["data"]["pos"]["y"]) + 4,
-                                color
-                            )
-                        end
-                    end
-                    local n1, n2 = string.match(pair_table["data"]["sender"], "(.).+_(.).+")
-                    if n1 and n2 then
-                        if mapmode == 0 then
-                            renderFontDrawText(
-                                font8,
-                                n1 .. n2,
-                                getX(pair_table["data"]["pos"]["x"]),
-                                getY(pair_table["data"]["pos"]["y"]) + 12,
-                                0xFF00FF00
-                            )
-                        else
-                            renderFontDrawText(
-                                font12,
-                                pair_table["data"]["sender"],
-                                getX(pair_table["data"]["pos"]["x"]) - string.len(pair_table["data"]["sender"]) * 5,
-                                getY(pair_table["data"]["pos"]["y"]) + 12,
-                                0xFF00FF00
-                            )
-                        end
-                    end
-                    if pair_table["data"]["health"] ~= nil then
-                        if mapmode == 0 then
-                            renderFontDrawText(
-                                font8,
-                                pair_table["data"]["health"] .. " hp",
-                                getX(pair_table["data"]["pos"]["x"]) - 30,
-                                getY(pair_table["data"]["pos"]["y"]) + 2,
-                                0xFF00FF00
-                            )
-                        else
-                            renderFontDrawText(
-                                font12,
-                                pair_table["data"]["health"] .. " hp",
-                                getX(pair_table["data"]["pos"]["x"]) -
-                                    string.len(pair_table["data"]["health"] .. " dl") * 9.4,
-                                getY(pair_table["data"]["pos"]["y"]) + 4,
-                                0xFF00FF00
-                            )
-                        end
-                    end
-                    if pair_table["data"]["is_truck"] then
-                        renderDrawTexture(
-                            matavoz,
-                            getX(pair_table["data"]["pos"]["x"]),
-                            getY(pair_table["data"]["pos"]["y"]),
-                            iconsize,
-                            iconsize,
-                            -pair_table["data"]["heading"] + 90,
-                            -1
-                        )
-                    else
-                        renderDrawTexture(
-                            player,
-                            getX(pair_table["data"]["pos"]["x"]),
-                            getY(pair_table["data"]["pos"]["y"]),
-                            iconsize,
-                            iconsize,
-                            -pair_table["data"]["heading"],
-                            -1
-                        )
-                    end
-                    if pair_table["data"]["trailer"]["pos"] ~= nil then
-                        if pair_table["data"]["trailer"]["model"] == 584 then
-                            renderDrawTexture(
-                                gruzNeft,
-                                getX(pair_table["data"]["trailer"]["pos"]["x"]),
-                                getY(pair_table["data"]["trailer"]["pos"]["y"]),
-                                iconsize,
-                                iconsize,
-                                -pair_table["data"]["trailer"]["heading"] + 90,
-                                -1
-                            )
-                        else
-                            if pair_table["data"]["trailer"]["pos"]["gruz"] == 2 then
-                                renderDrawTexture(
-                                    gruzUgol,
-                                    getX(pair_table["data"]["trailer"]["pos"]["x"]),
-                                    getY(pair_table["data"]["trailer"]["pos"]["y"]),
-                                    iconsize,
-                                    iconsize,
-                                    -pair_table["data"]["trailer"]["heading"] + 90,
-                                    -1
-                                )
-                            else
-                                renderDrawTexture(
-                                    gruzDerevo,
-                                    getX(pair_table["data"]["trailer"]["pos"]["x"]),
-                                    getY(pair_table["data"]["trailer"]["pos"]["y"]),
-                                    iconsize,
-                                    iconsize,
-                                    -pair_table["data"]["trailer"]["heading"] + 90,
-                                    -1
-                                )
-                            end
-                        end
-                    end
+                color = 0xFFdedbd2
+                if response_timestamp - pair_timestamp > 5 then
+                    renderFontDrawText( font10, string.format("%.0f?", response_timestamp - pair_timestamp), getX(pair_table["data"]["pos"]["x"]) + 17, getY(pair_table["data"]["pos"]["y"]) + 2, color )
+                end
+                if pair_table["data"]["is_truck"] then
+                    renderDrawTexture( truck, getX(pair_table["data"]["pos"]["x"]), getY(pair_table["data"]["pos"]["y"]), iconsize, iconsize, -pair_table["data"]["heading"] + 90, -1 )
+                else
+                    renderDrawTexture( player, getX(pair_table["data"]["pos"]["x"]), getY(pair_table["data"]["pos"]["y"]), iconsize, iconsize, -pair_table["data"]["heading"], -1 )
                 end
             end
         end
     end
-end
-
-function getMode(x, y)
-    if x == 1 then
-        if y == 1 then
-            return 1
-        end
-        if y == 2 then
-            return 2
-        end
-        if y == 3 then
-            return 3
-        end
-    end
-    if x == 2 then
-        if y == 1 then
-            return 4
-        end
-        if y == 2 then
-            return 5
-        end
-        if y == 3 then
-            return 6
-        end
-    end
-    if x == 3 then
-        if y == 1 then
-            return 7
-        end
-        if y == 2 then
-            return 8
-        end
-        if y == 3 then
-            return 9
-        end
-    end
-end
-
-function getQ(x, y, mp)
-    if mp == 1 then
-        if x <= 0 and y <= 0 then
-            return true
-        end
-    end
-    if mp == 2 then
-        if x >= -1500 and x <= 1500 and y <= 0 then
-            return true
-        end
-    end
-    if mp == 3 then
-        if x >= 0 and y <= 0 then
-            return true
-        end
-    end
-    if mp == 4 then
-        if x <= 0 and y >= -1500 and y <= 1500 then
-            return true
-        end
-    end
-    if mp == 5 then
-        if x >= -1500 and x <= 1500 and y >= -1500 and y <= 1500 then
-            return true
-        end
-    end
-
-    if mp == 6 then
-        if x >= 0 and y >= -1500 and y <= 1500 then
-            return true
-        end
-    end
-
-    if mp == 7 then
-        if x <= 0 and y >= 0 then
-            return true
-        end
-    end
-    if mp == 8 then
-        if x >= -1500 and x <= 1500 and y >= 0 then
-            return true
-        end
-    end
-    if mp == 9 then
-        if x >= 0 and y >= 0 then
-            return true
-        end
-    end
-    return false
 end
 
 function getX(x)
-    if mapmode == 0 then
-        x = math.floor(x + 3000)
-        return bX + x * (size / 6000) - iconsize / 2
-    end
-    if mapmode == 3 or mapmode == 9 or mapmode == 6 then
-        return bX - iconsize / 2 + math.floor(x) * (size / 3000)
-    end
-    if mapmode == 1 or mapmode == 7 or mapmode == 4 then
-        return bX - iconsize / 2 + math.floor(x + 3000) * (size / 3000)
-    end
-    if mapmode == 2 or mapmode == 8 or mapmode == 5 then
-        return bX - iconsize / 2 + math.floor(x + 1500) * (size / 3000)
-    end
+    x = math.floor(x + 3000)
+    return bX + x * (size / 6000) - iconsize / 2
 end
 
 function getY(y)
-    if mapmode == 0 then
-        y = math.floor(y * -1 + 3000)
-        return bY + y * (size / 6000) - iconsize / 2
+    y = math.floor(y * -1 + 3000)
+    return bY + y * (size / 6000) - iconsize / 2
+end
+
+function ParaList()
+    local wait_for_response1 = true
+    local down1 = false
+    local ip, port = sampGetCurrentServerAddress()
+    local response_path1 = os.tmpname()
+    downloadUrlToFile(
+        "http://185.204.2.156:43136/" .. encodeJson({request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}),
+        response_path1,
+        function(id, status, p1, p2)
+            if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+                down1 = true
+            end
+            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                wait_for_response1 = false
+            end
+        end
+    )
+    while wait_for_response1 do
+        wait(10)
     end
-    if mapmode == 7 or mapmode == 9 or mapmode == 8 then
-        return bY + size - iconsize / 2 - math.floor(y) * (size / 3000)
+    processing_response1 = true
+
+    if down1 and doesFileExist(response_path1) then
+        local f = io.open(response_path1, "r")
+        if f then
+            local info = decodeJson(f:read("*a"))
+            
+            local dialogText = 'Имя[ID]\tСкилл\tФура/Груз\tНапарник\n'
+            local playerList = {}
+            local ip, port = sampGetCurrentServerAddress(  )
+            local sserver = ip .. ":" .. tostring(port)
+            local trucker_count = 0
+            for k,v in pairs(info.data.senders) do
+                for i,s in pairs(v.data) do
+                    if sserver == s and os.time() - v.timestamp < 60 and v.data.paraid ~= nil then
+                        trucker_count = trucker_count + 1
+                        dialogText = string.format('%s%s[%s]\t%s\t%s\t%s[%s]\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), v.data.pair_mode_name, v.data.paraid)
+                    end
+                end
+            end
+            sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
+        else
+            wait_for_response1 = false
+        end
+        f:close()
+        os.remove(response_path1)
+    else
+        print(
+            "{ff0000}[" ..
+                string.upper(thisScript().name) ..
+                    "]: Мы не смогли получить ответ от сервера. Возможно проблема с интернетом, сервером или сервер упал.",
+            0x348cb2
+        )
     end
-    if mapmode == 1 or mapmode == 3 or mapmode == 2 then
-        return bY + size - iconsize / 2 - math.floor(y + 3000) * (size / 3000)
+    if doesFileExist(response_path1) then
+        os.remove(response_path1)
     end
-    if mapmode == 4 or mapmode == 5 or mapmode == 6 then
-        return bY + size - iconsize / 2 - math.floor(y + 1500) * (size / 3000)
-    end
+    processing_response1 = false
+end
+
+function onScriptTerminate()
+    down = true
 end
