@@ -1,6 +1,6 @@
 script_name("TruckHUD")
 script_author("Serhiy_Rubin")
-script_version("03/04/2020")
+script_version("09/07/2020")
 
 function try(f, catch_f)
   local status, exception = pcall(f)
@@ -207,7 +207,6 @@ function main()
 				if stop_downloading_1 then
 					stop_downloading_1 = false
 					download_id_1 = nil
-					print("Завершаю загрузчик n1")
 					return false
 				end
                 if status == dlstatus.STATUS_ENDDOWNLOADDATA then
@@ -1068,6 +1067,16 @@ function doRenderStats()
         drawClickableText(string_render, X, Y)
         string_render, Y = string.format("{%s}Рейсы: {%s}%d/%d [%d]", c1, c2, log.ReysH, log.Reys, greys), Y + height
         drawClickableText(string_render, X, Y)
+
+        if pair_mode and pair_status == 200 and pair_table["data"] ~= nil and pair_table["data"]["sender"] ~= nil then
+
+            local afk = response_timestamp - pair_timestamp
+            string_render, Y = string.format("{%s}Напарник: {%s}%s%s", c1, c2, pair_table["data"]["sender"], (afk > 5 and ' [AFK: '..math.ceil(afk)..']' or '')), Y + height + down
+            drawClickableText(string_render, X, Y)
+            local para_pos = FindSklad(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], pair_table["data"]["pos"]["z"])
+            string_render, Y = string.format("      {%s}%s (%s m)", c2, para_pos.text, math.ceil(para_pos.dist)), Y + height
+            drawClickableText(string_render, X, Y)
+        end
     else
         if inifiles.Stats.Hour then
             string_render, Y = string.format("{%s}Статистика за час", c1), Y + height + down
@@ -1147,7 +1156,6 @@ function doRenderMon()
 				if stop_downloading_2 then
 					stop_downloading_2 = false
 					download_id_2 = nil
-					print("Завершаю загрузчик n2")
 					return false
 				end
                 if status == dlstatus.STATUS_ENDDOWNLOADDATA then
@@ -1706,27 +1714,29 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
         )
     end
 end
---[[
-function FindSklad()
-	local result = ""
+
+function FindSklad(x, y, z)
+	local minDist, minResult = 1000000, ""
 	local pos = {
-	["n1"] = {x = 256.02127075195, y = 1414.8492431641, z = 10.232398033142},
-	["y1"] = {x = 608.63952636719, y = 847.59533691406, z = -43.589405059814},
-	["l1"] = {x = -448.91455078125, y = -65.951385498047, z = 58.959014892578},
-	["n2"] = {x = -1046.7521972656, y = -670.66937255859, z = 31.885597229004},
-	["y2"] = {x = -1872.8674316406, y = -1720.0148925781, z = 21.322338104248},
-	["l2"] = {x = -1978.8649902344, y = -2434.9421386719, z = 30.192840576172},
-	["ls"] = {x = 2614.2241210938, y = -2228.8745117188, z = 12.905993461609},
-	["sf"] = {x = -1733.1876220703, y = 120.08413696289, z = 3.1192970275879}
+	["Нефть 1"] = {x = 256.02127075195, y = 1414.8492431641, z = 10.232398033142},
+	["Уголь 1"] = {x = 832.10766601563, y = 864.03668212891, z = 11.643839836121},
+	["Лес 1"] = {x = -448.91455078125, y = -65.951385498047, z = 58.959014892578},
+	["Нефть 2"] = {x = -1046.7521972656, y = -670.66937255859, z = 31.885597229004},
+	["Уголь 2"] = {x = -1872.8674316406, y = -1720.0148925781, z = 21.322338104248},
+	["Лес 2"] = {x = -1978.8649902344, y = -2434.9421386719, z = 30.192840576172},
+	["Порт ЛС"] = {x = 2614.2241210938, y = -2228.8745117188, z = 12.905993461609},
+	["Порт СФ"] = {x = -1733.1876220703, y = 120.08413696289, z = 3.1192970275879}
     }
 	for name, cord in pairs(pos) do
-		local X, Y, Z = getDeadCharCoordinates(PLAYER_PED)
-		local distance = getDistanceBetweenCoords3d(X, Y, Z, cord.x, cord.y, cord.z)
-		if distance <= 23.8 then
-			result = name
+		local distance = getDistanceBetweenCoords3d(x, y, z, cord.x, cord.y, cord.z)
+		if distance < minDist then
+			minDist = distance
+            minResult = name
 		end
 	end
-end]]
+    return { text = minResult, dist = minDist }
+end
+
 function sampev.onServerMessage(color, message)
     if message == " У вас бан чата!" then
         delay.chatMon = 0
@@ -2566,7 +2576,6 @@ function sampev.onSendCommand(cmd)
 							if stop_downloading_3 then
 								stop_downloading_3 = false
 								download_id_3 = nil
-								print("Завершаю загрузчик n3")
 								return false
 							end
                             if status == dlstatus.STATUS_ENDDOWNLOADDATA then
@@ -2884,11 +2893,13 @@ function drawClickableText(text, posX, posY)
         local textHeight = renderGetFontDrawHeight(font)
         local curX, curY = getCursorPos()
         if curX >= posX and curX <= posX + textLenght and curY >= posY and curY <= posY + textHeight then
-            renderFontDrawText(font, text, posX, posY, "0x70" .. inifiles.Render.Color2)
-            if isKeyJustPressed(1) and (control or sampIsChatInputActive()) then
-                return true
-            else
-                return false
+            if control or sampIsChatInputActive() then
+                renderFontDrawText(font, text, posX, posY, "0x70" .. inifiles.Render.Color2)
+                if isKeyJustPressed(1) then
+                    return true
+                else
+                    return false
+                end
             end
         end
     else
@@ -2979,7 +2990,6 @@ function transponder()
 					if stop_downloading_4 then
 						stop_downloading_4 = false
 						download_id_4 = nil
-						print("Завершаю загрузчик n4")
 						return false
 					end
                     if status == dlstatus.STATUS_ENDDOWNLOADDATA then
@@ -3149,7 +3159,7 @@ function fastmap()
             (os.time() - dialogActiveClock) > 1 and 
             not sampIsScoreboardOpen() and
             not isSampfuncsConsoleActive() and 
-            (isKeyDown(vkeys[inifiles.Settings.Key3]) and isKeyDown(vkeys[inifiles.Settings.Key2]) or (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]))) 
+            (isKeyDown(vkeys[inifiles.Settings.Key3]) and isKeyDown(vkeys[inifiles.Settings.Key2]) or (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3])))
         then
             local x, y = getCharCoordinates(playerPed)
             if not sampIsChatInputActive() and wasKeyPressed(vkeys[inifiles.Settings.Key6]) then
@@ -3194,7 +3204,7 @@ function fastmap()
                 renderDrawTexture( player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1 )
             end
 
-            if pair_table["data"] ~= nil then
+            if pair_table["data"] ~= nil and pair_table["data"]["pos"] ~= nil and pair_table["data"]["pos"]["x"] ~= nil then
                 color = 0xFFdedbd2
                 if response_timestamp - pair_timestamp > 5 then
                     renderFontDrawText( font10, string.format("%.0f?", response_timestamp - pair_timestamp), getX(pair_table["data"]["pos"]["x"]) + 17, getY(pair_table["data"]["pos"]["y"]) + 2, color )
@@ -3231,7 +3241,6 @@ function ParaList()
 			if stop_downloading_5 then
 				stop_downloading_5 = false
 				download_id_5 = nil
-				print("Завершаю загрузчик n5")
 				return false
 			end
             if status == dlstatus.STATUS_ENDDOWNLOADDATA then
