@@ -1068,7 +1068,7 @@ function doRenderStats()
         string_render, Y = string.format("{%s}Рейсы: {%s}%d/%d [%d]", c1, c2, log.ReysH, log.Reys, greys), Y + height
         drawClickableText(string_render, X, Y)
 
-        if pair_mode and pair_status == 200 and pair_table["data"] ~= nil and pair_table["data"]["sender"] ~= nil then
+        if pair_mode and pair_status == 200 and pair_table["data"] ~= nil and pair_table["data"]["sender"] ~= nil and pair_table["data"]["pos"] ~= nil then
 
             local afk = response_timestamp - pair_timestamp
             string_render, Y = string.format("{%s}Напарник: {%s}%s%s", c1, c2, pair_table["data"]["sender"], (afk > 5 and ' [AFK: '..math.ceil(afk)..']' or '')), Y + height + down
