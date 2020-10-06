@@ -2516,8 +2516,7 @@ function sampev.onSendCommand(cmd)
                                 if f then
                                     local text = f:read("*a")
                                     if text ~= nil then
-                                        --Utf8ToAnsi(text)
-                                        sampShowDialog(222, "Обновления TruckHUD", "{FFFFFF}" .. text, "Закрыть", "", 0)
+                                        sampShowDialog(222, "Обновления TruckHUD", "{FFFFFF}" .. Utf8ToAnsi(text), "Закрыть", "", 0)
                                     end
                                     io.close(f)
                                 end
