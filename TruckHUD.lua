@@ -1,6 +1,6 @@
 script_name("TruckHUD")
 script_author("Serhiy_Rubin")
-script_version("09/07/2020")
+script_version("06/10/2020")
 
 function try(f, catch_f)
   local status, exception = pcall(f)
@@ -71,7 +71,7 @@ local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, Binde
 local script_run, control, auto, autoh, wait_auto, pos = false, false, false, true, 0, {[1] = false, [2] = false, [3] = false}
 local price_frozen, timer, antiflood, current_load, load_location, unload_location = false, 0, 0, 0, false, false
 local my_nick, server, timer_min, timer_sec, workload = "", "", 0, 0, 0
-local mon_life, mon_kd, mon_secund, mon_time, mon_ctime, stop_thread, mon_upd = 0, 0, 0, 0, 0, false, false
+local mon_life, mon_secund, mon_time, mon_ctime, stop_thread, mon_upd = 0, 0, 0, 0, false, 0
 local log, log_files = {ReysH = 0, Reys = 0, ZPH = 0, ZP = 0, PribH = 0, Prib = 0, ZatrH = 0, Zatr = 0}, {}
 local prices_3dtext = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
 local prices_mon = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
@@ -81,7 +81,7 @@ local pickupLoad = {
     [1] = {251.32167053223, 1420.3039550781, 11.5}, -- N1
     [2] = {839.09020996094, 880.17510986328, 14.3515625}, -- Y1
     [3] = {-1048.6430664063, -660.54699707031, 33.012603759766}, -- N2
-    [4] = {-1863.361328125, -1724.2398681641, 22.75}, -- y2
+    [4] = {-2913.8544921875, -1377.0952148438, 12.762256622314}, -- y2
     [5] = {-1963.6184082031, -2438.9055175781, 31.625}, -- l2
     [6] = {-457.45620727539, -53.193939208984, 60.938865661621} -- l1
 }
@@ -92,6 +92,7 @@ local pair_status = 0
 local response_timestamp = 0
 local transponder_delay = 500
 local ScriptTerminate = false
+local msk_timestamp = 0
 
 stop_downloading_1, stop_downloading_2, stop_downloading_3, stop_downloading_4, stop_downloading_5 = false, false, false, false, false
 
@@ -102,6 +103,7 @@ function main()
     repeat wait(0) until sampGetCurrentServerName() ~= "SA-MP"
     repeat wait(0) until sampGetCurrentServerName():find("Samp%-Rp.Ru")
 
+    lua_thread.create(get_time)
     local _, my_id = sampGetPlayerIdByCharHandle(PLAYER_PED)
     my_nick = sampGetPlayerNickname(my_id)
     server = sampGetCurrentServerName():gsub("|", "")
@@ -117,6 +119,7 @@ function main()
     AdressFolder = string.format("%s\\moonloader\\config\\TruckHUD\\%s-%s", getGameDirectory(), server, my_nick)
     AdressLogFolder = string.format("%s\\Log\\", AdressFolder)
     AdressIni = string.format("TruckHUD\\%s-%s\\Settings.ini", server, my_nick)
+    AdressBlackList = string.format("%s\\moonloader\\config\\TruckHUD\\BlackList.txt", getGameDirectory())
 
     if not doesDirectoryExist(AdressConfig) then
         createDirectory(AdressConfig)
@@ -191,12 +194,21 @@ function main()
             Price = {
                 Load = 500,
                 UnLoad = 800
+            },
+            tmonitor = { 
+            	time = 0,
+            	n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 
             }
         },
         AdressIni
     )
 
     inicfg.save(inifiles, AdressIni)
+
+    for k,v in pairs(prices_mon) do
+    	prices_mon[k] = inifiles.tmonitor[k]
+    end
+    mon_time = inifiles.tmonitor.time
 
     if inifiles.Settings.ad then
         local fpath = os.getenv("TEMP") .. "\\TruckHUD-version.txt"
@@ -321,9 +333,7 @@ function doControl()
                     delay.dir = 1
                 end
                 if i == 6 then
-                    lua_thread.create(function()
-                        ParaList()
-                    end)
+                    users_show = true
                 end
                 if i == 7 then
                     ShowDialog1(1)
@@ -1121,90 +1131,26 @@ function doRenderMon()
             sampSetCursorMode(0)
         end
     end
+
     local X, Y, c1, c2 = inifiles.Settings.X2, inifiles.Settings.Y2, inifiles.Render.Color1, inifiles.Render.Color2
     local height = renderGetFontDrawHeight(font)
-    if not mon_upd then
-        mon_secund = os.time() - mon_kd
-        local A1 = os.difftime(os.time(), mon_time)
-        local A2 = os.difftime(os.time(), mon_ctime)
-        if A2 >= A1 then
-            stimer = A1
-        else
-            stimer = A2
-        end
-        local hour, minute, second = stimer / 3600, math.floor(stimer / 60), stimer % 60
-        if hour >= 1 then
-            send_time_mon = string.format("%02d:%02d:%02d", math.floor(hour), minute - (math.floor(hour) * 60), second)
-            rdtext = string.format("Склады. %s", send_time_mon)
-        else
-            send_time_mon = string.format("%02d:%02d", minute, second)
-            rdtext = string.format("Склады. %s", send_time_mon)
-        end
+
+    local A1 = os.difftime(msk_timestamp, mon_time)
+    local A2 = os.difftime(msk_timestamp, mon_ctime)
+    if A2 >= A1 then
+        stimer = A1 
+    else
+        stimer = A2
     end
-    if drawClickableText(rdtext, X, Y) then
-        mon_secund = 20
+    local hour, minute, second = stimer / 3600, math.floor(stimer / 60), stimer % 60
+    if hour >= 1 then
+        send_time_mon = string.format("%02d:%02d:%02d", math.floor(hour), minute - (math.floor(hour) * 60), second)
+        rdtext = string.format("Склады. %s", send_time_mon)
+    else
+        send_time_mon = string.format("%02d:%02d", minute, second)
+        rdtext = string.format("Склады. %s", send_time_mon)
     end
-    if (mon_secund >= 20 or mon_upd) and inifiles.Settings.MonDownload then
-        mon_secund = 0
-        mon_upd = false
-        mon_kd = os.time()
-        local fpath = os.getenv("TEMP") .. "\\TruckHUD-monitoring.txt"
-        download_id_2 = downloadUrlToFile(
-            "http://truck.hud.xsph.ru/" .. server,
-            fpath,
-            function(id, status, p1, p2)
-				if stop_downloading_2 then
-					stop_downloading_2 = false
-					download_id_2 = nil
-					return false
-				end
-                if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-                    local f = io.open(fpath, "r")
-                    if f then
-                        local text = f:read("*a")
-                        if
-                            string.find(
-                                text,
-                                "%[LS N:%d+ Y:%d+ L:%d+%] %[1 N:%d+ Y:%d+ L:%d+%] %[2 N:%d+ Y:%d+ L:%d+%] %[SF N:%d+ Y:%d+ L:%d+%] (%d+)"
-                            )
-                         then
-                            G1 =
-                                string.match(
-                                text,
-                                "%[LS N:%d+ Y:%d+ L:%d+%] %[1 N:%d+ Y:%d+ L:%d+%] %[2 N:%d+ Y:%d+ L:%d+%] %[SF N:%d+ Y:%d+ L:%d+%] (%d+)"
-                            )
-                            G2 = os.difftime(os.time(), G1) -- Из сервера
-                            G3 = os.difftime(os.time(), mon_ctime) -- из чата
-                            if tonumber(G3) > tonumber(G2) then
-                                S1 = mon_time
-                                prices_mon.n1,
-                                    prices_mon.n2,
-                                    prices_mon.y1,
-                                    prices_mon.y2,
-                                    prices_mon.l1,
-                                    prices_mon.l2,
-                                    prices_mon.lsn,
-                                    prices_mon.lsy,
-                                    prices_mon.lsl,
-                                    prices_mon.sfn,
-                                    prices_mon.sfy,
-                                    prices_mon.sfl,
-                                    mon_time =
-                                    string.match(
-                                    text,
-                                    "%[LS N:(%d+) Y:(%d+) L:(%d+)%] %[1 N:(%d+) Y:(%d+) L:(%d+)%] %[2 N:(%d+) Y:(%d+) L:(%d+)%] %[SF N:(%d+) Y:(%d+) L:(%d+)%] (%d+)"
-                                )
-                                if S1 ~= mon_time then
-                                    mon_life = os.time()
-                                end
-                            end
-                        end
-                        io.close(f)
-                    end
-                end
-            end
-        )
-    end
+ 	drawClickableText(rdtext, X, Y)
     -----
     local secund = os.difftime(os.time(), mon_life)
     if secund == 3 or secund == 1 then
@@ -1722,7 +1668,7 @@ function FindSklad(x, y, z)
 	["Уголь 1"] = {x = 832.10766601563, y = 864.03668212891, z = 11.643839836121},
 	["Лес 1"] = {x = -448.91455078125, y = -65.951385498047, z = 58.959014892578},
 	["Нефть 2"] = {x = -1046.7521972656, y = -670.66937255859, z = 31.885597229004},
-	["Уголь 2"] = {x = -1872.8674316406, y = -1720.0148925781, z = 21.322338104248},
+	["Уголь 2"] = {x = -2913.8544921875, y = -1377.0952148438, z = 10.762256622314},
 	["Лес 2"] = {x = -1978.8649902344, y = -2434.9421386719, z = 30.192840576172},
 	["Порт ЛС"] = {x = 2614.2241210938, y = -2228.8745117188, z = 12.905993461609},
 	["Порт СФ"] = {x = -1733.1876220703, y = 120.08413696289, z = 3.1192970275879}
@@ -1812,7 +1758,7 @@ function sampev.onServerMessage(color, message)
         )
      then
         mon_life = os.time()
-        mon_ctime = os.time()
+        mon_ctime = msk_timestamp
         if (string.find(message, "Купил") or string.find(message, "Продал")) then
             nick,
                 rank,
@@ -2058,46 +2004,34 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
     end
 
     if DdialogId == 22 and Dstyle == 0 and string.find(Dtext, "Заводы") then
-        mon_life = os.time()
         delay.mon = 0
-        prices_mon.n1,
-            prices_mon.n2,
-            prices_mon.y1,
-            prices_mon.y2,
-            prices_mon.l1,
-            prices_mon.l2,
-            prices_mon.lsn,
-            prices_mon.lsy,
-            prices_mon.lsl,
-            prices_mon.sfn,
-            prices_mon.sfy,
-            prices_mon.sfl =
-            string.match(
-            Dtext,
-            "[Заводы].*Нефтезавод №1.*.*Нефть: 0.(%d+) вирт.*Нефтезавод №2.*.*Нефть: 0.(%d+) вирт.*Склад угля №1.*.*Уголь: 0.(%d+) вирт.*Склад угля №2.*.*Уголь: 0.(%d+) вирт.*Лесопилка №1.*.*Дерево: 0.(%d+) вирт.*Лесопилка №2.*.*Дерево: 0.(%d+) вирт.*[Порты].*Порт ЛС.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт.*Порт СФ.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт"
-        )
+        mon_life = os.time()
+        mon_time = msk_timestamp
+        prices_mon.n1, prices_mon.n2, prices_mon.y1, prices_mon.y2, prices_mon.l1, prices_mon.l2, prices_mon.lsn, prices_mon.lsy, prices_mon.lsl, prices_mon.sfn, prices_mon.sfy, prices_mon.sfl = string.match( Dtext, "[Заводы].*Нефтезавод №1.*.*Нефть: 0.(%d+) вирт.*Нефтезавод №2.*.*Нефть: 0.(%d+) вирт.*Склад угля №1.*.*Уголь: 0.(%d+) вирт.*Склад угля №2.*.*Уголь: 0.(%d+) вирт.*Лесопилка №1.*.*Дерево: 0.(%d+) вирт.*Лесопилка №2.*.*Дерево: 0.(%d+) вирт.*[Порты].*Порт ЛС.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт.*Порт СФ.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт" )
+
         for k, v in pairs(prices_mon) do
             if string.find(tostring(prices_mon[k]), "99") then
                 prices_mon[k] = tonumber(prices_mon[k]) + 1
             end
         end
-        local data =
-            string.format(
-            "[LS N:%d Y:%d L:%d] [1 N:%d Y:%d L:%d] [2 N:%d Y:%d L:%d] [SF N:%d Y:%d L:%d]",
-            prices_mon.n1,
-            prices_mon.n2,
-            prices_mon.y1,
-            prices_mon.y2,
-            prices_mon.l1,
-            prices_mon.l2,
-            prices_mon.lsn,
-            prices_mon.lsy,
-            prices_mon.lsl,
-            prices_mon.sfn,
-            prices_mon.sfy,
-            prices_mon.sfl
-        )
-        downloadUrlToFile("http://truck.hud.xsph.ru/index.php?server=" .. server .. "&text=" .. data)
+
+        inifiles.tmonitor = {
+            n1 = prices_mon.n1,
+            n2 = prices_mon.n2,
+            y1 = prices_mon.y1,
+            y2 = prices_mon.y2,
+            l1 = prices_mon.l1,
+            l2 = prices_mon.l2,
+            lsn = prices_mon.lsn,
+            lsy = prices_mon.lsy,
+            lsl = prices_mon.lsl,
+            sfn = prices_mon.sfn,
+            sfy = prices_mon.sfy,
+            sfl = prices_mon.sfl,
+            time = msk_timestamp
+    	}
+    	inicfg.save(inifiles, AdressIni)
+
         if delay.chatMon == -1 then
             SendMonText =
                 string.format(
@@ -2117,7 +2051,6 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
             )
             delay.chatMon = 1
         end
-        mon_upd = true
         if script_run then
             return false
         end
@@ -2950,6 +2883,7 @@ function transponder()
                 paraid = pair_mode_id,
 				carmodel = carmodel,
 				carhealth = carhealth,
+				tmonitor = inifiles.tmonitor
             }
 
             if pair_mode and pair_mode_name ~= nil then
@@ -2979,6 +2913,18 @@ function transponder()
                 request_table["info"]["trailer"] = {}
             end
 
+            download_call = 0
+            if os.time() - mon_upd > 5 then
+            	mon_upd = os.time()
+            	request_table = {request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}
+            	download_call = 1
+            end
+            if users_show then
+            	download_call = 3
+            	request_table = {request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}
+            	users_show = false
+            end
+
             collecting_data = false
             wait_for_response = true
             local response_path = os.tmpname()
@@ -3005,48 +2951,100 @@ function transponder()
             end
             processing_response = true
 
-            if down and doesFileExist(response_path) then
-                local f = io.open(response_path, "r")
-                if f then
-                    local info = decodeJson(f:read("*a"))
-                    if info == nil then
-                        sampAddChatMessage(
-                            "{ff0000}[" ..
-                                string.upper(thisScript().name) ..
-                                    "]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
-                            0x348cb2
-                        )
-                    else
-                        if info.result == "ok" then
-                            response_timestamp = info.timestamp
-                            transponder_delay = info.delay
-                            if info.data ~= nil then
-                                pair_status = 200
-                                pair_timestamp = info.data.timestamp
-                                pair_table = info.data
-                            end
-                            if para_message_send == nil then
-                                para_message_send = 1
-                                sampAddChatMessage("Установлен напарник "..pair_mode_name.."["..pair_mode_id.."]"..". Теперь вы можете пользоваться картой.", -1)
-                                sampAddChatMessage(string.format("Активация в фуре: %s. Без фуры: %s + %s.", inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key2:gsub("VK_", "")), -1)
-                            end
-                        elseif info.result == "error" then
-                            transponder_delay = info.delay
-                            if info.reason ~= nil then
-                                if info.reason == 403 or info.reason == 404 then
-                                    pair_status = info.reason
-                                    error_message(pair_mode_name.."["..pair_mode_id.."] пока не установил Вас напарником в своем TruckHUD.")
-                                end
-                            end
-                        end
-                        wait_for_response = false
-                    end
-                    f:close()
-                    os.remove(response_path)
-                end
-            else
-                error_message('Сервер не отвечает, напишите о проблеме в группу vk.com/rubin.mods')
-            end
+	        if down and doesFileExist(response_path) then
+	            local f = io.open(response_path, "r")
+	            if f then
+	                local fileText = f:read("*a")
+	                if fileText ~= nil and #fileText > 0 then
+	                	info = decodeJson(fileText)
+	                	if info == nil then
+	                        sampAddChatMessage(
+	                            "{ff0000}[" ..
+	                                string.upper(thisScript().name) ..
+	                                    "]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
+	                            0x348cb2
+	                        )
+	                    else
+	                    	if download_call == 0 then
+								if info.result == "ok" then
+		                            response_timestamp = info.timestamp
+		                            transponder_delay = info.delay
+		                            if info.data ~= nil then
+		                                pair_status = 200
+		                                pair_timestamp = info.data.timestamp
+		                                pair_table = info.data
+		                            end
+		                            if para_message_send == nil then
+		                                para_message_send = 1
+		                                sampAddChatMessage("Установлен напарник "..pair_mode_name.."["..pair_mode_id.."]"..". Теперь вы можете пользоваться картой.", -1)
+		                                sampAddChatMessage(string.format("Активация в фуре: %s. Без фуры: %s + %s.", inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key2:gsub("VK_", "")), -1)
+		                            end
+		                        elseif info.result == "error" then
+		                            transponder_delay = info.delay
+		                            if info.reason ~= nil then
+		                                if info.reason == 403 or info.reason == 404 then
+		                                    pair_status = info.reason
+		                                    error_message(pair_mode_name.."["..pair_mode_id.."] пока не установил Вас напарником в своем TruckHUD.")
+		                                end
+		                            end
+		                        end
+		                    end
+					        if download_call == 1 and inifiles.Settings.MonDownload then
+								local ip, port = sampGetCurrentServerAddress(  )
+							    local sserver = ip .. ":" .. tostring(port)
+
+								local minKD = 1000000
+								local tmonitor = {}
+
+								local bl = black_list('read')
+								for k,v in pairs(info.data.senders) do
+									for i,s in pairs(v.data) do
+									    if sserver == s and v.data.tmonitor ~= nil and v.data.tmonitor.time > (msk_timestamp - 86400) then
+									        monKD = msk_timestamp - v.data.tmonitor.time
+									        if monKD > 0 and bl[v.data.sender] == nil then
+									            if monKD < minKD then
+									            	minKD = monKD
+									            	tmonitor = v.data.tmonitor
+									            end
+									        end
+									    end
+									end	
+								end
+								if minKD ~= 1000000 then
+									if mon_ctime < tmonitor.time then 
+										mon_time = tmonitor.time
+										for k, v in pairs(prices_mon) do
+										    if tmonitor[k] ~= nil then
+										        prices_mon[k] = tmonitor[k]
+										    end
+										end
+									end
+								end
+					        end
+					        if download_call == 3 then
+							    local dialogText = 'Имя[ID]\tСкилл\tФура/Груз\tНапарник\n'
+							    local ip, port = sampGetCurrentServerAddress(  )
+							    local sserver = ip .. ":" .. tostring(port)
+							    local trucker_count = 0
+							    for k,v in pairs(info.data.senders) do
+							        for i,s in pairs(v.data) do
+							            if sserver == s and os.time() - v.timestamp < 60 and v.data.paraid ~= nil then
+							                trucker_count = trucker_count + 1
+							                dialogText = string.format('%s%s[%s]\t%s\t%s\t%s\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), ( v.data.pair_mode_name == '____' and 'Нет' or v.data.pair_mode_name..'['..v.data.paraid..']'))
+							            end
+							        end	
+							    end
+							    sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
+					        end
+	                        wait_for_response = false
+	                    end
+	                end
+	                f:close()
+	                os.remove(response_path)
+	            end
+	        else
+	            error_message('Сервер не отвечает, напишите о проблеме в группу vk.com/rubin.mods')
+	        end
             if doesFileExist(response_path) then
                 os.remove(response_path)
             end
@@ -3229,72 +3227,24 @@ function getY(y)
     return bY + y * (size / 6000) - iconsize / 2
 end
 
-function ParaList()
-    local wait_for_response1 = true
-    local down1 = false
-    local ip, port = sampGetCurrentServerAddress()
-    local response_path1 = os.tmpname()
-    download_id_5 = downloadUrlToFile(
-        "http://185.204.2.156:43136/" .. encodeJson({request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}),
-        response_path1,
-        function(id, status, p1, p2)
-			if stop_downloading_5 then
-				stop_downloading_5 = false
-				download_id_5 = nil
-				return false
-			end
-            if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-                down1 = true
-            end
-            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                wait_for_response1 = false
-            end
-        end
-    )
-    while wait_for_response1 do
-        wait(10)
-    end
-    processing_response1 = true
+function black_list(delays)
+	if delays == 'read' then
+		local file = io.open(AdressBlackList, "r")
+		local returns = {}
+    	if file ~= nil then
+    	 	for line in file:lines() do
+    	 		returns[line] = 0
+    	 	end
+    	 	io.close(file)
+    	end
+    	return returns
+	end
+	if delays == 'write' then
 
-    if down1 and doesFileExist(response_path1) then
-        local f = io.open(response_path1, "r")
-        if f then
-            local info = decodeJson(f:read("*a"))
-            
-            local dialogText = 'Имя[ID]\tСкилл\tФура/Груз\tНапарник\n'
-            local playerList = {}
-            local ip, port = sampGetCurrentServerAddress(  )
-            local sserver = ip .. ":" .. tostring(port)
-            local trucker_count = 0
-            for k,v in pairs(info.data.senders) do
-                for i,s in pairs(v.data) do
-                    if sserver == s and os.time() - v.timestamp < 60 and v.data.paraid ~= nil then
-                        trucker_count = trucker_count + 1
-                        dialogText = string.format('%s%s[%s]\t%s\t%s\t%s\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), ( v.data.pair_mode_name == '____' and 'Нет' or v.data.pair_mode_name..'['..v.data.paraid..']'))
-                    end
-                end	
-            end
-            sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
-        else
-            wait_for_response1 = false
-        end
-        f:close()
-        os.remove(response_path1)
-    else
-        print(
-            "{ff0000}[" ..
-                string.upper(thisScript().name) ..
-                    "]: Мы не смогли получить ответ от сервера. Возможно проблема с интернетом, сервером или сервер упал.",
-            0x348cb2
-        )
-    end
-    if doesFileExist(response_path1) then
-        os.remove(response_path1)
-    end
-    processing_response1 = false
-end 
+	end
+end
  
- function onScriptTerminate(LuaScript, quitGame)
+function onScriptTerminate(LuaScript, quitGame)
     if LuaScript == thisScript() then
         stop_downloading_1 = true
 		stop_downloading_2 = true
@@ -3311,4 +3261,34 @@ end
 		end
 		deleteMarkers()
     end
+end
+
+function get_time()
+	local adress = os.getenv('TEMP')..'\\time.txt'
+	local url = 'https://alat.specihost.com/unix-time/'
+	gettime = 0
+	downloadUrlToFile(url, adress, function(id, status, p1, p2)
+        if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+        	_time = os.time()
+	        if doesFileExist(adress) then
+            local f = io.open(adress, 'r')
+            	if f then
+	          	  time = f:read('*a')
+	          	  msk_timestamp = tonumber(time:match('^Current Unix Timestamp: <b>(%d+)</b>')) + (timezone or 0) * 60 * 60
+	          	  --sampAddChatMessage(os.date("%X", msk_timestamp), -1)
+	          	  --sampAddChatMessage(os.date("%X", os.time()), -1)
+	          	  f:close()
+	          	  os.remove(adress)
+	        	end
+	    	end
+	    end
+	end)
+
+	repeat wait(0) until msk_timestamp > 0
+
+	while true do
+		wait(500)
+	    msk_timestamp = msk_timestamp + (os.time() - _time)
+	    _time = os.time()
+	end
 end
