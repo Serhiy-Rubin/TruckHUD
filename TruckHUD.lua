@@ -1,6 +1,6 @@
 script_name("TruckHUD")
 script_author("Serhiy_Rubin")
-script_version("06/10/2020")
+script_version("21.1.3.1")
 
 function try(f, catch_f)
   local status, exception = pcall(f)
@@ -16,14 +16,14 @@ try(function()
     require("moonloader").download_status,
     require "lib.vkeys",
     require("ffi")
-	
+    
   end, function(e)
     sampAddChatMessage(">> Произошла ошибка на этапе загрузки библиотек. Возможно у вас нет SAMP.Lua", 0xff0000)
     sampAddChatMessage(">> Официальная страница Truck HUD: https://vk.com/rubin.mods",0xff0000)
-	sampAddChatMessage(e, -1)
-	thisScript():unload()
+    sampAddChatMessage(e, -1)
+    thisScript():unload()
   end)
-	
+    
 ffi.cdef [[ bool SetCursorPos(int X, int Y); ]]
 
 ------- 3d text
@@ -53,6 +53,7 @@ local find_3dText = {
     ["ls"] = "Порт ЛС.*Нефть: 0.(%d+).*Уголь: 0.(%d+).*Дерево: 0.(%d+)",
     ["sf"] = "Порт СФ.*Нефть: 0.(%d+).*Уголь: 0.(%d+).*Дерево: 0.(%d+)"
 }
+
 local menu = {
     [1] = {[1] = "TruckHUD: {06940f}ON", [2] = "TruckHUD: {d10000}OFF", run = false},
     [2] = {[1] = "Load/Unload: {06940f}ON", [2] = "Load/Unload: {d10000}OFF", run = false},
@@ -68,15 +69,20 @@ local menu = {
 }
 
 local pair_mode, sms_pair_mode, report_text, pair_mode_id, pair_mode_name, BinderMode = false, "", "", -1, "Нет", true
+
 local script_run, control, auto, autoh, wait_auto, pos = false, false, false, true, 0, {[1] = false, [2] = false, [3] = false}
+
 local price_frozen, timer, antiflood, current_load, load_location, unload_location = false, 0, 0, 0, false, false
+
 local my_nick, server, timer_min, timer_sec, workload = "", "", 0, 0, 0
-local mon_life, mon_secund, mon_time, mon_ctime, stop_thread, mon_upd = 0, 0, 0, 0, false, 0
-local log, log_files = {ReysH = 0, Reys = 0, ZPH = 0, ZP = 0, PribH = 0, Prib = 0, ZatrH = 0, Zatr = 0}, {}
+
+local mon_life, mon_time, mon_ctime = 0, 0, 0
+
 local prices_3dtext = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
 local prices_mon = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
 local prices_smon = { n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 }
-local delay, d = {chatMon = 0, chat = 0, skill = -1, mon = 0, load = 0, unload = 0, sms = 0, dir = 0}, {[3] = ""}
+
+local delay, d = {chatMon = 0, chat = 0, skill = -1, mon = 0, load = 0, unload = 0, sms = 0, dir = 0, paycheck = 0}, {[3] = ""}
 local pickupLoad = {
     [1] = {251.32167053223, 1420.3039550781, 11.5}, -- N1
     [2] = {839.09020996094, 880.17510986328, 14.3515625}, -- Y1
@@ -93,6 +99,13 @@ local response_timestamp = 0
 local transponder_delay = 500
 local ScriptTerminate = false
 local msk_timestamp = 0
+local responce_delay = 0
+local timer_secc = 0
+local base = {}
+local payday = 0
+local chat_mon = {}
+local _3dTextplayers = {}
+
 
 stop_downloading_1, stop_downloading_2, stop_downloading_3, stop_downloading_4, stop_downloading_5 = false, false, false, false, false
 
@@ -101,9 +114,8 @@ function main()
     while not isSampAvailable() do wait(0) end
 
     repeat wait(0) until sampGetCurrentServerName() ~= "SA-MP"
-    repeat wait(0) until sampGetCurrentServerName():find("Samp%-Rp.Ru")
+    repeat wait(0) until sampGetCurrentServerName():find("Samp%-Rp.Ru") or sampGetCurrentServerName():find("SRP")
 
-    lua_thread.create(get_time)
     local _, my_id = sampGetPlayerIdByCharHandle(PLAYER_PED)
     my_nick = sampGetPlayerNickname(my_id)
     server = sampGetCurrentServerName():gsub("|", "")
@@ -115,32 +127,100 @@ function main()
         thisScript():unload()
     end
     AdressConfig = string.format("%s\\moonloader\\config ", getGameDirectory())
-    AdressBind = string.format("%s\\moonloader\\config\\TruckHUD\\Binder.txt", getGameDirectory())
-    AdressFolder = string.format("%s\\moonloader\\config\\TruckHUD\\%s-%s", getGameDirectory(), server, my_nick)
-    AdressLogFolder = string.format("%s\\Log\\", AdressFolder)
-    AdressIni = string.format("TruckHUD\\%s-%s\\Settings.ini", server, my_nick)
-    AdressBlackList = string.format("%s\\moonloader\\config\\TruckHUD\\BlackList.txt", getGameDirectory())
+    AdressFolder = string.format("%s\\moonloader\\config\\TruckHUD", getGameDirectory())
+    AdressJson = string.format("%s\\moonloader\\config\\TruckHUD\\%s-%s.json", getGameDirectory(), server, my_nick)
 
     if not doesDirectoryExist(AdressConfig) then
         createDirectory(AdressConfig)
     end
-    if not doesDirectoryExist(AdressLogFolder) then
-        createDirectory(AdressLogFolder)
+    if not doesDirectoryExist(AdressFolder) then
+        createDirectory(AdressFolder)
     end
+    settings_load()
+    lua_thread.create(get_time)
+    logAvailable()
+    for k,v in pairs(prices_mon) do
+        prices_mon[k] = inifiles.tmonitor[k]
+    end
+    mon_time = inifiles.tmonitor.time
+
+    if inifiles.Settings.ad then
+        local fpath = os.getenv("TEMP") .. "\\TruckHUD-version.txt"
+        download_id_1 = downloadUrlToFile(
+            "https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/version",
+            fpath,
+            function(id, status, p1, p2)
+                if stop_downloading_1 then
+                    stop_downloading_1 = false
+                    download_id_1 = nil
+                    return false
+                end
+                if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+                    local f = io.open(fpath, "r")
+                    if f then
+                        local text = f:read("*a")
+                        if text ~= nil then
+                            if not string.find(text, tostring(thisScript().version)) then
+                                sampAddChatMessage( ">> Вышло обновление для Truck HUD, версия " .. text .. ". Текущая версия " ..  thisScript().version, 0xFF2f72f7)
+                                sampAddChatMessage( ">> Посмотреть список изменений: /truck up. Включить/Выключить уведомления: /truck ad", 0xFF2f72f7)
+                                sampAddChatMessage( ">> Официальная страница Truck HUD: https://vk.com/rubin.mods", 0xFF2f72f7)
+                            end
+                        end
+                        io.close(f)
+                        os.remove(fpath)
+                    end
+                end
+            end
+        )
+    end
+    menu[3].run = inifiles.Settings.Report
+    font = renderCreateFont(inifiles.Render.FontName, inifiles.Render.FontSize, inifiles.Render.FontFlag)
+
+    --gmap area
+    lua_thread.create(transponder)
+    lua_thread.create(fastmap)
+    lua_thread.create(renderTruckers)
+    repeat
+        wait(0)
+    until msk_timestamp ~= 0 
+    while true do
+        wait(0)
+        logAvailable()
+        doControl()
+        doSendCMD()
+        doDialog()
+        doPair()
+        doPickup()
+        doMarkers()
+        if script_run then
+            doCruise()
+            if not sampIsScoreboardOpen() and sampIsChatVisible() and not isKeyDown(116) and not isKeyDown(121) and fastmapshow == nil then
+                doRenderStats()
+                doRenderMon()
+                doRenderBind()
+            end
+        end
+    end
+end
+
+function settings_load()
     local x1, y1 = convertGameScreenCoordsToWindowScreenCoords(14.992679595947, 274.75)
     local x2, y2 = convertGameScreenCoordsToWindowScreenCoords(146.17861938477, 345.91665649414)
     local x3, y3 = convertGameScreenCoordsToWindowScreenCoords(529.42901611328, 158.08332824707)
-
-    inifiles =
-        inicfg.load(
-        {
+    defaultMon = 
+[[!mn!Скилл: {FFFFFF}!skill! [!skill_poc!%] [!skill_reys!]!n!Ранг: {FFFFFF}!rang! [!rang_poc!%] [!rang_reys!]!n!!mn!Зарплата:{FFFFFF} !zp_hour!/!max_zp!!n!Прибыль: {FFFFFF}!profit!!n!Рейсы: {FFFFFF}!reys_hour!/!reys_day! [!left_reys!] ]]
+        local table_std = {
             Settings = {
+                Cruise = false,
+                chat_in_truck = false,
+                blacklist_inversion = false,
+                pairinfo = true,
+                transponder = true,
+                fastmap = true,
                 ad = true,
                 AutoWait = true,
                 highlight_jf = true,
-                Style = true,
                 Stop = true,
-                MonDownload = true,
                 ChatOFF = false,
                 ChatDoklad = false,
                 X1 = x1,
@@ -156,9 +236,7 @@ function main()
                 Key1 = "VK_RBUTTON",
                 Key2 = "VK_Z",
                 Key3 = "VK_LBUTTON",
-                Key4 = "VK_M",
-                Key5 = "VK_K",
-                Key6 = "VK_OEM_COMMA",
+                Key4 = 'VK_LSHIFT',
                 Binder = true,
                 SMSpara = false,
                 ColorPara = "ff9900",
@@ -166,7 +244,11 @@ function main()
                 LightingPrice = true,
                 girl = false,
                 pickup = true,
-                markers = true
+                markers = true,
+                stats_text = defaultMon,
+                renderTruck = true,
+                AutoClear = true,
+                NewPairMSG = true
             },
             Render = {
                 FontName = "Segoe UI",
@@ -184,104 +266,55 @@ function main()
                 ProcRank = 100.0,
                 MaxZP = 197000
             },
-            map = {
-                sqr = false
-            },
-            Stats = {
-                Hour = true,
-                Day = true
-            },
             Price = {
                 Load = 500,
                 UnLoad = 800
             },
             tmonitor = { 
-            	time = 0,
-            	n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 
-            }
-        },
-        AdressIni
-    )
-
-    inicfg.save(inifiles, AdressIni)
-
-    for k,v in pairs(prices_mon) do
-    	prices_mon[k] = inifiles.tmonitor[k]
+                time = 0,
+                n1 = 0, n2 = 0, y1 = 0, y2 = 0, l1 = 0, l2 = 0, lsn = 0, lsy = 0, lsl = 0, sfn = 0, sfy = 0, sfl = 0 
+            },
+            binder = { '/r На месте', '/r Загружаюсь', '/r Задержусь', '/r Разгружаюсь' },
+            blacklist = {}
+        }
+    if not doesFileExist(AdressJson) then
+        local file, error = io.open(AdressJson, "w")
+        if file ~= nil then
+            file:write(encodeJson(table_std))
+            file:flush()
+            io.close(file)
+        else
+            sampAddChatMessage(error, -1)
+        end
     end
-    mon_time = inifiles.tmonitor.time
-
-    if inifiles.Settings.ad then
-        local fpath = os.getenv("TEMP") .. "\\TruckHUD-version.txt"
-        download_id_1 = downloadUrlToFile(
-            "https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/version",
-            fpath,
-            function(id, status, p1, p2)
-				if stop_downloading_1 then
-					stop_downloading_1 = false
-					download_id_1 = nil
-					return false
-				end
-                if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-                    local f = io.open(fpath, "r")
-                    if f then
-                        local text = f:read("*a")
-                        if text ~= nil then
-                            if not string.find(text, tostring(thisScript().version)) then
-                                sampAddChatMessage(
-                                    ">> Вышло обновление для Truck HUD, версия от " ..
-                                        text .. ". Текущая версия от " .. thisScript().version,
-                                    0xFF2f72f7
-                                )
-                                sampAddChatMessage(
-                                    ">> Посмотреть список изменений: /truck up. Включить/Выключить уведомления: /truck ad",
-                                    0xFF2f72f7
-                                )
-                                sampAddChatMessage(
-                                    ">> Официальная страница Truck HUD: https://vk.com/rubin.mods",
-                                    0xFF2f72f7
-                                )
-                            end
-                        end
-                        io.close(f)
-                    end
+    local file, error = io.open(AdressJson, "r")
+    if file then
+        inifiles = decodeJson(file:read("*a"))
+        io.close(file)
+    else
+        sampAddChatMessage(error, -1)
+    end
+        for k,v in pairs(table_std) do
+            if inifiles[k] == nil then
+                inifiles[k] = v
+            end
+            for i, s in pairs(v) do
+                if inifiles[k][i] == nil then
+                    inifiles[k][i] = s
                 end
             end
-        )
-    end
+        end
+    settings_save()
+end
 
-    if not doesFileExist(AdressBind) then
-        local text = "кд !КД\nНа месте\nБеру\nРазгружаю\nБерем по КД\nСдаем по КД\nЗадержусь\n"
-        file = io.open(AdressBind, "a")
-        file:write(text)
+function settings_save()
+    local file, error = io.open(AdressJson, "w")
+    if file ~= nil then
+        file:write(encodeJson(inifiles))
         file:flush()
         io.close(file)
-    end
-    menu[3].run = inifiles.Settings.Report
-    font = renderCreateFont(inifiles.Render.FontName, inifiles.Render.FontSize, inifiles.Render.FontFlag)
-    ReadLog()
-
-    --gmap area
-    lua_thread.create(transponder)
-    lua_thread.create(fastmap)
-
-
-    --gmap area
-
-    while true do
-        wait(0)
-        doControl()
-        doSendCMD()
-        doDialog()
-        doPair()
-        doPickup()
-        doMarkers()
-        if script_run then
-            if not sampIsScoreboardOpen() and sampIsChatVisible() and not isKeyDown(116) and not isKeyDown(121) then
-                doRenderStats()
-                doRenderMon()
-                doRenderBind()
-            end
-        end
+    else
+        sampAddChatMessage(error, -1)
     end
 end
 
@@ -297,7 +330,6 @@ function doControl()
         local X, Y = getScreenResolution()
         if not control then
             ffi.C.SetCursorPos((X / 2), (Y / 2))
-            Binder(1)
         end
         control = true
         local plus = (renderGetFontDrawHeight(font) + (renderGetFontDrawHeight(font) / 10))
@@ -307,10 +339,10 @@ function doControl()
             if drawClickableText(string_render, ((X / 2) - (renderGetFontDrawTextLength(font, string_render) / 2)), Y) then
                 if i == 1 then
                     script_run = not script_run
-                    menu[i].run = script_run
                     if script_run then
-                        ReadLog()
+                        delay.paycheck = 1
                     end
+                    menu[i].run = script_run
                 end
                 if i == 2 then
                     auto = not auto
@@ -318,7 +350,7 @@ function doControl()
                 end
                 if i == 3 then
                     inifiles.Settings.Report = not inifiles.Settings.Report
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     menu[i].run = inifiles.Settings.Report
                 end
                 if i == 4 then
@@ -332,8 +364,8 @@ function doControl()
                 if i == 5 then
                     delay.dir = 1
                 end
-                if i == 6 then
-                    users_show = true
+                if i == 6 and script_run then
+                    lua_thread.create(showTruckers)
                 end
                 if i == 7 then
                     ShowDialog1(1)
@@ -417,6 +449,12 @@ function doSendCMD()
                                         sampSendChat("/jskill")
                                         delay.skill = 2
                                     end
+                                    if delay.skill == 0 then
+                                        if delay.paycheck == 1 then
+                                            sampSendChat("/paycheck")
+                                            delay.paycheck = 2
+                                        end
+                                    end
                                 end
                             end
                         end
@@ -430,15 +468,17 @@ end
 function doDialog()
     local result, button, list, input = sampHasDialogRespond(222)
     local caption = sampGetDialogCaption()
+    if caption:find('Truck%-HUD: Блокировка') then
+        if result then
+            doLocalBlock(button, list, input, caption)
+        end
+    end
     if caption == "Truck-HUD: Настройки" then
         if result and button == 1 then
             if dialogLine ~= nil and dialogLine[list + 1] ~= nil then
                 local str = dialogLine[list + 1]
                 if str:find("TruckHUD") then
                     script_run = not script_run
-                    if script_run then
-                        ReadLog()
-                    end
                     ShowDialog1(1)
                 end
                 if str:find("Сменить позицию статистики с таймером") then
@@ -453,30 +493,36 @@ function doDialog()
                     wait(100)
                     pos[3] = true
                 end
-                if str:find("Компактная статистика") then
-                    inifiles.Settings.Style = not inifiles.Settings.Style
-                    inicfg.save(inifiles, AdressIni)
-                    ShowDialog1(1)
+                if str:find("Редактировать формат статистики") then
+                    editbox_stats = true
+                    ShowDialog1(9)
                 end
-                if str:find("Статистика за час") then
-                    inifiles.Stats.Hour = not inifiles.Stats.Hour
-                    inicfg.save(inifiles, AdressIni)
-                    ShowDialog1(1)
-                end
-                if str:find("Статистика за сутки") then
-                    inifiles.Stats.Day = not inifiles.Stats.Day
-                    inicfg.save(inifiles, AdressIni)
-                    ShowDialog1(1)
+                if str:find("Cruise Control") then
+                    if str:find("Кнопка") then
+                        ShowDialog1(4, 4)
+                    else
+                        inifiles.Settings.Cruise = not inifiles.Settings.Cruise
+                        if inifiles.Settings.Cruise then 
+                            sampAddChatMessage('Для активации когда едете нажмите '..inifiles.Settings.Key4:gsub('VK_', '')..'. Чтобы отключить нажмите W.', -1)
+                        end
+                        settings_save()
+                        ShowDialog1(1)
+                    end
+                 end
+                if str:find("Информация о напарнике на HUD") then
+                    inifiles.Settings.pairinfo = not inifiles.Settings.pairinfo
+                    settings_save()
+                    ShowDialog1(9)
                 end
                 if str:find("Доклады в рацию") then
                     inifiles.Settings.Report = not inifiles.Settings.Report
                     menu[3].run = inifiles.Settings.Report
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Доклады от") then
                     inifiles.Settings.girl = not inifiles.Settings.girl
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Авто загрузка/разгрузка") then
@@ -486,20 +532,20 @@ function doDialog()
                 end
                 if str:find("Режим авто загрузки/разгрузки") then
                     inifiles.Settings.AutoOFF = not inifiles.Settings.AutoOFF
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Убрать тюнинг колес с фур") then
                     inifiles.Settings.Tuning = not inifiles.Settings.Tuning
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Биндер") then
                     inifiles.Settings.Binder = not inifiles.Settings.Binder
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
-                if str:find("Режим пары	") then
+                if str:find("Режим пары ") then
                     if pair_mode then
                         pair_mode = false
                         menu[4].run = false
@@ -510,42 +556,52 @@ function doDialog()
                 end
                 if str:find("Доклады в SMS") then
                     inifiles.Settings.SMSpara = not inifiles.Settings.SMSpara
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Подсветка напарника в чате") then
                     inifiles.Settings.LightingPara = not inifiles.Settings.LightingPara
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Остановка фуры после разгрузки") then
                     inifiles.Settings.Stop = not inifiles.Settings.Stop
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
-                if str:find("Получение мониторинга с Хостинга") then
-                    inifiles.Settings.MonDownload = not inifiles.Settings.MonDownload
-                    inicfg.save(inifiles, AdressIni)
+                if str:find("Синхронизация") then
+                    inifiles.Settings.transponder = not inifiles.Settings.transponder
+                    settings_save()
+                    ShowDialog1(1)
+                end
+                if str:find("Карта с позицией") then
+                    inifiles.Settings.fastmap = not inifiles.Settings.fastmap
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Скрывать чат профсоюза") then
                     inifiles.Settings.ChatOFF = not inifiles.Settings.ChatOFF
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
+                    ShowDialog1(1)
+                end
+                if str:find("только в фуре") then
+                    inifiles.Settings.chat_in_truck = not inifiles.Settings.chat_in_truck
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Отправка мониторинга в чат") then
                     inifiles.Settings.ChatDoklad = not inifiles.Settings.ChatDoklad
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Выделение Портов") then
                     inifiles.Settings.highlight_jf = not inifiles.Settings.highlight_jf
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Выделение цены") then
                     inifiles.Settings.LightingPrice = not inifiles.Settings.LightingPrice
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Цвет подсветки напарника") then
@@ -599,12 +655,12 @@ function doDialog()
                         ShowDialog1(2, dialogTextToList[list + 1], inifiles.Render.Color2, true, "Render", "Color2")
                     end
                 end
-                if str:find("Цена авто-загрузки") then
+                if str:find("Цена авто%-загрузки") then
                     if dialogTextToList[list + 1] ~= nil then
                         ShowDialog1(2, dialogTextToList[list + 1], inifiles.Price.Load, false, "Price", "Load")
                     end
                 end
-                if str:find("Цена авто-разгрузки") then
+                if str:find("Цена авто%-разгрузки") then
                     if dialogTextToList[list + 1] ~= nil then
                         ShowDialog1(2, dialogTextToList[list + 1], inifiles.Price.UnLoad, false, "Price", "UnLoad")
                     end
@@ -614,7 +670,7 @@ function doDialog()
                 end
                 if str:find("Задержка") then
                     inifiles.Settings.AutoWait = not inifiles.Settings.AutoWait
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("clist 0") then
@@ -622,7 +678,7 @@ function doDialog()
                     if not inifiles.Settings.markers then
                         deleteMarkers()
                     end
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(1)
                 end
                 if str:find("Кнопка для работы без фуры") then
@@ -631,8 +687,27 @@ function doDialog()
                 if str:find("Кнопка для отображения карты") then
                     ShowDialog1(4, 3)
                 end
+                if str:find("Локальная блокировка участников") then
+                    LocalBlock(1)
+                end
+                if str:find("Уведомления когда Вас установили напарником") then
+                    inifiles.Settings.NewPairMSG = not inifiles.Settings.NewPairMSG
+                    settings_save()
+                    ShowDialog1(1)
+                end
+                if str:find("Авто%-Очистка неиспользуемой памяти скрипта") then
+                    inifiles.Settings.AutoClear = not inifiles.Settings.AutoClear
+                    settings_save()
+                    ShowDialog1(1)
+                end
+                if str:find("Очистить неиспользуемую память скрипта") then
+                    local mem_do = string.format('%0.2f MB', (tonumber(gcinfo()) / 1000))
+                    collectgarbage()
+                    sampAddChatMessage('Памяти очищена. Было: '..mem_do..'. Стало: '..string.format('%0.2f MB', (tonumber(gcinfo()) / 1000)), -1)
+                    ShowDialog1(1)
+                end
                 if str:find("Подробная статистика") then
-                    ShowDialog1(5)
+                    ShowStats(1)
                 end
                 if str:find("Контакты автора") then
                     ShowDialog1(3)
@@ -654,7 +729,7 @@ function doDialog()
                 if gou then
                     d[3] = (d[4] and tostring(input) or tonumber(input))
                     inifiles[d[5]][d[6]] = d[3]
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     if d[5]:find("Render") then
                         renderReleaseFont(font)
                         font =
@@ -671,6 +746,21 @@ function doDialog()
             else
                 ShowDialog1(1)
             end
+        end
+    end
+    if caption == "Truck-HUD: Редактор HUD" then
+        if result then
+            if button == 1 then
+                local text = getClipboardText()
+                if #text > 1 then
+                    inifiles.Settings.stats_text = text
+                    settings_save()
+                else
+                    inifiles.Settings.stats_text = defaultMon
+                    settings_save()
+                end
+            end
+            ShowDialog1(1)
         end
     end
     if caption == "Truck-HUD: Контакты автора" then
@@ -697,55 +787,22 @@ function doDialog()
             end
         end
     end
+    if caption == 'Truck-HUD: Биндер' then
+        if result then
+            if button == 1 and #input > 0 then 
+                if d[2] == 1 then
+                    inifiles.binder[#inifiles.binder + 1] = input
+                    settings_save()
+                elseif d[2] == 2 then
+                    inifiles.binder[d[3]] = input
+                    settings_save()
+                end
+            end
+        end
+    end
     if caption == "Truck-HUD: Статистика" then
         if result then
-            if button == 1 and log_files[list] ~= nil then
-                ReadLog(AdressLogFolder .. log_files[list], log_files[list])
-            else
-                ShowDialog1(1)
-            end
-        end
-    end
-    if caption == tostring(d[3]) then
-        if result then
-            ShowDialog1(5)
-        end
-    end
-    if caption == "Truck-HUD: Биндер" then
-        if d[2] == 2 and d[7] then
-            d[7] = false
-            sampSetCurrentDialogEditboxText(d[3])
-        end
-        if result and button == 1 then
-            if #input > 0 then
-                if d[2] == 1 then
-                    local file = io.open(AdressBind, "a")
-                    file:write(input .. "\n")
-                    file:flush()
-                    io.close(file)
-                end
-                if d[2] == 2 then
-                    local file = io.open(AdressBind, "r")
-                    local fileText = ""
-                    local List = 0
-                    if file ~= nil then
-                        for line in file:lines() do
-                            List = List + 1
-                            if List == BinderList then
-                                line = input
-                            end
-                            fileText = fileText .. line .. "\n"
-                        end
-                        io.close(file)
-                    end
-                    file = io.open(AdressBind, "w")
-                    file:write(fileText)
-                    file:flush()
-                    io.close(file)
-                end
-            else
-                ShowDialog1(d[1], d[2])
-            end
+           WhileShowStats(button, list)
         end
     end
     if caption == "Truck-HUD: Режим пары" then
@@ -754,12 +811,13 @@ function doDialog()
                 if string.find(input, "(%d+)") then
                     pair_mode_id = tonumber(string.match(input, "(%d+)"))
                     if sampIsPlayerConnected(pair_mode_id) then
-                        error_message_send = nil
+                        error_message(1, '')
                         para_message_send = nil
                         pair_mode_name = sampGetPlayerNickname(pair_mode_id)
                         menu[4][1] = "SMS » " .. pair_mode_name .. "[" .. pair_mode_id .. "]"
                         pair_mode = true
                         menu[4].run = true
+                        transponder_delay = 100
                     else
                         pair_mode_id = -1
                         pair_mode = false
@@ -778,9 +836,6 @@ function doDialog()
             if button == 1 then
                 if list == 0 then
                     script_run = not script_run
-                    if script_run then
-                        ReadLog()
-                    end
                     ShowDialog1(9)
                 end
                 if list == 1 then
@@ -789,7 +844,7 @@ function doDialog()
                 end
                 if list == 2 then
                     inifiles.Settings.Report = not inifiles.Settings.Report
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(9)
                 end
                 if list == 3 then
@@ -803,7 +858,7 @@ function doDialog()
                 end
                 if list == 4 then
                     inifiles.Settings.Binder = not inifiles.Settings.Binder
-                    inicfg.save(inifiles, AdressIni)
+                    settings_save()
                     ShowDialog1(9)
                 end
                 if list >= 5 then
@@ -829,14 +884,25 @@ function doPair()
 end
 
 function doPickup()
-    for k, v in pairs(pickupLoad) do
-        local X, Y, Z = getDeadCharCoordinates(PLAYER_PED)
-        local distance = getDistanceBetweenCoords3d(X, Y, Z, v[1], v[2], v[3])
-        if inifiles.Settings.pickup and distance <= 15.0 and isTruckCar() then
-            if v.pickup == nil then
-                result, v.pickup = createPickup(19197, 1, v[1], v[2], v[3])
+    if script_run then
+        for k, v in pairs(pickupLoad) do
+            local X, Y, Z = getDeadCharCoordinates(PLAYER_PED)
+            local distance = getDistanceBetweenCoords3d(X, Y, Z, v[1], v[2], v[3])
+            if inifiles.Settings.pickup and distance <= 15.0 and isTruckCar() then
+                if v.pickup == nil then
+                    result, v.pickup = createPickup(19135, 1, v[1], v[2], v[3])
+                end
+            else
+                if v.pickup ~= nil then
+                    if doesPickupExist(v.pickup) then
+                        removePickup(v.pickup)
+                        v.pickup = nil
+                    end
+                end
             end
-        else
+        end
+    else
+        for k, v in pairs(pickupLoad) do
             if v.pickup ~= nil then
                 if doesPickupExist(v.pickup) then
                     removePickup(v.pickup)
@@ -885,13 +951,48 @@ function deleteMarkers()
     end
 end
 
+function doCruise()
+    if not inifiles.Settings.Cruise then return end
+    if cruise == nil then cruise = false end
+    if not isCharInAnyCar(playerPed) then
+        if cruise then 
+            cruise = false
+            printStringNow('~R~Cruise Control - OFF', 1500)
+        end
+        return
+    end
+    local car = storeCarCharIsInNoSave(playerPed)
+    if cruise and not isCarEngineOn(car) then
+        cruise = false
+        printStringNow('~R~Cruise Control - OFF', 1500)
+        return
+    end
+    if not sampIsChatInputActive(  ) and not sampIsDialogActive(  ) and not sampIsCursorActive(  ) then
+        if pressW ~= nil and not isKeyDown(87) then
+            pressW = nil 
+        end
+        if not cruise and isKeyDown(87) and isKeyDown(vkeys[inifiles.Settings.Key4]) and isCarEngineOn(car) and isCharInAnyCar(playerPed) then
+            cruise = true
+            pressW = true
+            printStringNow('~G~Cruise Control - ON', 1500)
+        elseif cruise and not isKeyDown(vkeys[inifiles.Settings.Key4]) and isKeyDown(87) and pressW == nil then
+            cruise = false
+            printStringNow('~R~Cruise Control - OFF', 1500)
+        end
+    end
+    if cruise then
+        setGameKeyState(16, 255)
+    end
+end
+
 function doRenderStats()
+
     if pos[1] then
         sampSetCursorMode(3)
         local X, Y = getCursorPos()
         inifiles.Settings.X1, inifiles.Settings.Y1 = X, Y + 15
-        inicfg.save(inifiles, AdressIni)
         if isKeyJustPressed(1) then
+            settings_save()
             pos[1] = false
             sampSetCursorMode(0)
         end
@@ -905,8 +1006,8 @@ function doRenderStats()
         end
     end
     Y = Y + height
-    timer_secc = 180 - os.difftime(os.time(), timer)
-    local ost_time = 3600 - (os.date("%M", os.time()) * 60) + (os.date("%S", os.time()))
+    timer_secc = 180 - os.difftime(msk_timestamp, timer)
+    local ost_time = 3600 - (os.date("%M", msk_timestamp) * 60) + (os.date("%S", msk_timestamp))
     local greys = 0
     if workload == 1 then
         if timer_secc > 0 then
@@ -958,13 +1059,13 @@ function doRenderStats()
                         (workload == 1 and "Un" or "") ..
                             "Load: " .. inifiles.Price[(workload == 1 and "UnLoad" or "Load")] .. "] " or
             " {" .. autoColor .. "}[" .. (workload == 1 and "Un" or "") .. "Load] ")
-        if os.difftime(os.time(), timer) > 180 and autoh then
+        if os.difftime(msk_timestamp, timer) > 180 and autoh then
             if workload == 1 then
                 if unload_location then
                     local dp = {ls = "sf", sf = "ls"}
                     local dport, ds = string.match(current_warehouse, "(..)(.)")
                     local dcena =
-                        (prices_mon[dp[dport] .. ds] + prices_mon[current_warehouse]) - prices_3dtext[current_warehouse]
+                        (inifiles.tmonitor[dp[dport] .. ds] + inifiles.tmonitor[current_warehouse]) - prices_3dtext[current_warehouse]
                     if inifiles.Price.UnLoad ~= 0 then
                         if price_frozen then
                             if tonumber(prices_3dtext[current_warehouse]) == tonumber(inifiles.Price.UnLoad) then
@@ -989,10 +1090,10 @@ function doRenderStats()
                                     tonumber(prices_3dtext[current_warehouse]) <= tonumber(inifiles.Price.Load))
                          then
                             if inifiles.Settings.AutoWait then
-                                if (os.time() - wait_auto) <= 3 then
-                                    printStyledString("Wait load " .. (3 - (os.time() - wait_auto)), 1111, 5)
+                                if (msk_timestamp - wait_auto) <= 3 then
+                                    printStyledString("Wait load " .. (3 - (msk_timestamp - wait_auto)), 1111, 5)
                                 end
-                                if (os.time() - wait_auto) > 3 then
+                                if (msk_timestamp - wait_auto) > 3 then
                                     delay.load, autoh = 1, false
                                 end
                             else
@@ -1012,7 +1113,7 @@ function doRenderStats()
                 else
                     inifiles.Price.Load = 0
                 end
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
             else
                 delay.load = 0
                 delay.unload = 0
@@ -1046,75 +1147,49 @@ function doRenderStats()
         end
     end
     drawClickableText(strok, X, Y)
-    string_render, Y =
-        string.format(
-            "{%s}Скилл: {%s}%s [%s%%] [%s]",
-            c1,
-            c2,
-            inifiles.Trucker.Skill,
-            inifiles.Trucker.ProcSkill,
-            inifiles.Trucker.ReysSkill
-        ),
-        Y + height + down
-    drawClickableText(string_render, X, Y)
-    string_render, Y =
-        string.format(
-            "{%s}Ранг: {%s}%s [%s%%] [%s]",
-            c1,
-            c2,
-            inifiles.Trucker.Rank,
-            inifiles.Trucker.ProcRank,
-            inifiles.Trucker.ReysRank
-        ),
-        Y + height
-    drawClickableText(string_render, X, Y)
-    if inifiles.Settings.Style then
-        string_render, Y =
-            string.format("{%s}Зарплата: {%s}%d/%d", c1, c2, log.ZPH, inifiles.Trucker.MaxZP),
-            Y + height + down
-        drawClickableText(string_render, X, Y)
-        string_render, Y = string.format("{%s}Прибыль: {%s}%d", c1, c2, log.Prib), Y + height
-        drawClickableText(string_render, X, Y)
-        string_render, Y = string.format("{%s}Рейсы: {%s}%d/%d [%d]", c1, c2, log.ReysH, log.Reys, greys), Y + height
-        drawClickableText(string_render, X, Y)
+    local stats_array = split(inifiles.Settings.stats_text, '!n!')
+    local stats_info = {
+        ['!m!'] = string.format('%0.2f mb', (tonumber(gcinfo()) / 1000)),
+        ['!skill!'] = inifiles.Trucker.Skill,
+        ['!skill_poc!'] = inifiles.Trucker.ProcSkill,
+        ['!skill_reys!'] = inifiles.Trucker.ReysSkill,
+        ['!rang!'] = inifiles.Trucker.Rank,
+        ['!rang_poc!'] = inifiles.Trucker.ProcRank,
+        ['!rang_reys!'] = inifiles.Trucker.ReysRank,
+        ['!zp_hour!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp,
+        ['!max_zp!'] = inifiles.Trucker.MaxZP,
+        ['!profit!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day.pribil,
+        ['!reys_hour!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].razgruzkacount,
+        ['!reys_day!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day.razgruzkacount,
+        ['!left_reys!'] = greys,
+        ['!profit_hour!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].pribil,
+        ['!all_zp!'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day.zp
+    }
 
-        if pair_mode and pair_status == 200 and pair_table["data"] ~= nil and pair_table["data"]["sender"] ~= nil and pair_table["data"]["pos"] ~= nil then
-
-            local afk = response_timestamp - pair_timestamp
-            string_render, Y = string.format("{%s}Напарник: {%s}%s%s", c1, c2, pair_table["data"]["sender"], (afk > 5 and ' [AFK: '..math.ceil(afk)..']' or '')), Y + height + down
-            drawClickableText(string_render, X, Y)
-            local para_pos = FindSklad(pair_table["data"]["pos"]["x"], pair_table["data"]["pos"]["y"], pair_table["data"]["pos"]["z"])
-            string_render, Y = string.format("      {%s}%s (%s m)", c2, para_pos.text, math.ceil(para_pos.dist)), Y + height
-            drawClickableText(string_render, X, Y)
+    for k, v in pairs(stats_array) do
+        for i, s in pairs(stats_info) do
+            if v:find(i) then
+                v = v:gsub(i, s)
+            end
         end
-    else
-        if inifiles.Stats.Hour then
-            string_render, Y = string.format("{%s}Статистика за час", c1), Y + height + down
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Рейсов: {%s}%d [%d]", c1, c2, log.ReysH, greys), Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y =
-                string.format("{%s} Зарплата: {%s}%d/%d", c1, c2, log.ZPH, inifiles.Trucker.MaxZP),
-                Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Прибыль: {%s}%d", c1, c2, log.PribH), Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Затраты: {%s}%d", c1, c2, log.ZatrH), Y + height
-            drawClickableText(string_render, X, Y)
+        if v:find('!mn!') then
+            v = v:gsub('!mn!', '')
+            Y = Y + down + height
+        else
+            Y = Y + height
         end
-        if inifiles.Stats.Day then
-            string_render, Y = string.format("{%s}Статистика за сутки", c1), Y + height + down
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Рейсов: {%s}%d", c1, c2, log.Reys), Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Зарплата: {%s}%d", c1, c2, log.ZP), Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Прибыль: {%s}%d", c1, c2, log.Prib), Y + height
-            drawClickableText(string_render, X, Y)
-            string_render, Y = string.format("{%s} Затраты: {%s}%d", c1, c2, log.Zatr), Y + height
-            drawClickableText(string_render, X, Y)
-        end
+        drawClickableText(v, X, Y)
     end
+    if inifiles.Settings.pairinfo and pair_mode and pair_status == 200 and pair_table ~= nil and pair_table["pos"] ~= nil and base[pair_mode_name] ~= nil then
+        local afk = msk_timestamp - pair_timestamp
+        local timer_d = 180 - (base[pair_mode_name].timer > 1000 and os.difftime(msk_timestamp, base[pair_mode_name].timer) or 181)
+        string_render, Y = string.format(" {%s}%s[%s]%s", c2, pair_mode_name, pair_mode_id, (afk > 9 and ' [AFK: '..math.ceil(afk)..']' or '')), Y + height + down
+        drawClickableText(string_render, X, Y)
+        local para_pos = FindSklad(pair_table["pos"]["x"], pair_table["pos"]["y"], pair_table["pos"]["z"])
+        string_render, Y = string.format("{%s} [{%s}%s{%s}] %s (%s m)", c2, (timer_d < 11 and (timer_d > 0 and 'b50000' or c2) or c2), (timer_d > 0 and string.format('%d:%02d', math.floor(timer_d / 60), timer_d % 60) or '0:00'), c2, para_pos.text, math.ceil(para_pos.dist)), Y + height
+        drawClickableText(string_render, X, Y)
+    end
+    
     if delay.skill == -1 then
         delay.skill = 1
     end
@@ -1125,8 +1200,8 @@ function doRenderMon()
         sampSetCursorMode(3)
         local X, Y = getCursorPos()
         inifiles.Settings.X2, inifiles.Settings.Y2 = X, Y
-        inicfg.save(inifiles, AdressIni)
         if isKeyJustPressed(1) then
+            settings_save()
             pos[2] = false
             sampSetCursorMode(0)
         end
@@ -1150,9 +1225,11 @@ function doRenderMon()
         send_time_mon = string.format("%02d:%02d", minute, second)
         rdtext = string.format("Склады. %s", send_time_mon)
     end
- 	drawClickableText(rdtext, X, Y)
+    if drawClickableText(rdtext, X, Y) then
+        transponder_delay = 100
+    end
     -----
-    local secund = os.difftime(os.time(), mon_life)
+    local secund = os.difftime(msk_timestamp, mon_life)
     if secund == 3 or secund == 1 then
         c2 = "ff0000"
     end
@@ -1187,7 +1264,7 @@ function doRenderMon()
     if drawClickableText(string2, (X + renderGetFontDrawTextLength(font, string1)), Y) then
         sampSendChat(
             "/jf chat Еду на Склад Угля №2. До цели: " ..
-                math.ceil(getDistanceBetweenCoords3d(pX, pY, pZ, -1872.8674316406, -1720.0148925781, 21.322338104248)) ..
+                math.ceil(getDistanceBetweenCoords3d(pX, pY, pZ, -2913.8544921875, -1377.0952148438, 12.7622566223148)) ..
                     " м."
         )
     end
@@ -1332,91 +1409,44 @@ function doRenderBind()
         sampSetCursorMode(3)
         local X, Y = getCursorPos()
         inifiles.Settings.X3, inifiles.Settings.Y3 = X, Y + 15
-        inicfg.save(inifiles, AdressIni)
         if isKeyJustPressed(1) then
+            settings_save()
             pos[3] = false
             sampSetCursorMode(0)
         end
     end
-    if script_run and BindText ~= nil and inifiles.Settings.Binder and control or pos[3] then
+    if script_run and inifiles.Settings.Binder and control or pos[3] then
         local X, Y = inifiles.Settings.X3, inifiles.Settings.Y3
         local plus = (renderGetFontDrawHeight(font) + (renderGetFontDrawHeight(font) / 10))
-        if not pair_mode and not BinderMode then
-            BinderMode = true
-        end
-        if
-            drawClickableText(
-                string.format(
-                    "{%s}[ %sРация {%s}%s{%s}]",
-                    inifiles.Render.Color2,
-                    (BinderMode and "{12a61a}" or "{ff0000}"),
-                    inifiles.Render.Color2,
-                    (not BinderMode and "| {12a61a}CMC " or (pair_mode and "| {ff0000}CMC " or "")),
-                    inifiles.Render.Color2
-                ),
-                X,
-                Y - renderGetFontDrawHeight(font)
-            )
-         then
-            BinderMode = not BinderMode
-        end
         if drawClickableText("{" .. inifiles.Render.Color2 .. "}[Смена позиции]", X, Y) then
             pos[3] = true
         end
-        local List, string = 0, ""
-        for i = 1, #EditLine do
-            if EditLine[i] ~= nil then
-                string = EditLine[i]
-                if string.find(string, "!НикПары") then
-                    local nick = " "
-                    if sampIsPlayerConnected(pair_mode_id) then
-                        nick = sampGetPlayerNickname(pair_mode_id):gsub("_", " ")
-                    end
-                    string = string:gsub("!НикПары", nick)
+        for k, string in pairs(inifiles.binder) do
+            if string.find(string, "!НикПары") then
+                local nick = " "
+                if sampIsPlayerConnected(pair_mode_id) then
+                    nick = sampGetPlayerNickname(pair_mode_id):gsub("_", " ")
                 end
-                if string.find(string, "!ИдПары") then
-                    string = string:gsub("!ИдПары", pair_mode_id)
-                end
-                if string.find(string, "!КД") then
-                    local min, sec = timer_min, timer_sec
-                    if min < 0 then
-                        min, sec = 0, 0
-                    end
-                    string = string:gsub("!КД", string.format("%d:%02d", min, sec))
-                end
-                List = List + 1
-                Y = Y + plus
-                if drawClickableText(string, X, Y) then
-                    sampSendChat((BinderMode and "/jf chat " or "/sms " .. pair_mode_id .. " ") .. string)
-                end
-                if drawClickableText("{ff0000}х", (X + renderGetFontDrawTextLength(font, string .. "  ")), Y) then
-                    BinderList = List
-                    lua_thread.create(
-                        function()
-                            file = io.open(AdressBind, "r")
-                            local fileText = ""
-                            local List = 0
-                            if file ~= nil then
-                                for line in file:lines() do
-                                    List = List + 1
-                                    if List ~= BinderList then
-                                        fileText = fileText .. line .. "\n"
-                                    end
-                                end
-                                io.close(file)
-                            end
-                            file = io.open(AdressBind, "w")
-                            file:write(fileText)
-                            file:flush()
-                            io.close(file)
-                        end
-                    )
-                    Binder(1)
-                end
-                if drawClickableText("{12a61a}/", (X + renderGetFontDrawTextLength(font, string .. "     ")), Y) then
-                    BinderList = List
-                    ShowDialog1(7, 2, string)
-                end
+                string = string:gsub("!НикПары", nick)
+            end
+            if string.find(string, "!ИдПары") then
+                string = string:gsub("!ИдПары", pair_mode_id)
+            end
+            if string.find(string, "!КД") then
+                local min, sec = timer_min, timer_sec
+                if min < 0 then min, sec = 0, 0 end
+                string = string:gsub("!КД", string.format("%d:%02d", min, sec))
+            end
+            Y = Y + plus
+            if drawClickableText(string, X, Y) then
+                sampSendChat(string)
+            end
+            if drawClickableText("{ff0000}х", (X + renderGetFontDrawTextLength(font, string .. "  ")), Y) then
+                inifiles.binder[k] = nil
+                settings_save()
+            end
+            if drawClickableText("{12a61a}/", (X + renderGetFontDrawTextLength(font, string .. "     ")), Y) then
+                ShowDialog1(7, 2, k)
             end
         end
         Y = Y + plus
@@ -1426,20 +1456,279 @@ function doRenderBind()
     end
 end
 
-function Binder(int)
-    if int == 0 or int == 1 then -- Чтение
-        BindText = ""
-        BindTextEdit = ""
-        EditLine = {}
-        file = io.open(AdressBind, "r")
-        if file ~= nil then
-            for string in file:lines() do
-                EditLine[#EditLine + 1] = string
-                BindTextEdit = BindTextEdit .. string .. "\n"
-                BindText = string.format("%s%s\n", BindText, string)
+function doLocalBlock(button, list, input, caption)
+    if caption:find('1') then
+        if button == 1 then
+            if list == 0 then
+                LocalBlock(2)
+            elseif list == 1 then
+                LocalBlock(3)
+            elseif list == 2 then
+                inifiles.Settings.blacklist_inversion = not inifiles.Settings.blacklist_inversion
+                settings_save()
+                LocalBlock(1)
             end
-            io.close(file)
+        else
+            ShowDialog1(1)
         end
+    end
+    if caption:find('2') then
+        if button == 1 then
+            if dialogFunc[list + 1] ~= nil then 
+                dialogFunc[list + 1]()
+            end
+            LocalBlock(2)
+        else
+            LocalBlock(1)
+        end
+    end
+    if caption:find('3') then
+        if button == 1 then
+            if dialogFunc[list + 1] ~= nil then 
+                dialogFunc[list + 1]()
+            end
+            LocalBlock(3)
+        else
+            LocalBlock(1)
+        end
+    end
+end
+
+function LocalBlock(int, param)
+    if int == 1 then
+        dialogText = 'Блокировка мониторинга от пользователей\nБлокировка мониторинга с хостинга\nБлокировка мониторинга из чата\nРежим: '..(inifiles.Settings.blacklist_inversion and 'Как белый список' or 'Как черный список')
+        sampShowDialog(222, 'Truck-HUD: Блокировка [1]', dialogText, 'Выбрать', 'Закрыть', 5)
+    end
+    if int == 2 then
+        dialogFunc = {}
+        dialogText = '' -- fa3620
+        for k, v in pairs(base) do
+            if v.tmonitor ~= nil and v.tmonitor.lsn ~= nil then
+                local color = ( inifiles.blacklist[k] == nil and 'FFFFFF' or ( inifiles.blacklist[k] == true and 'fa3620' or 'FFFFFF'))
+                dialogText = string.format('%s{%s}Игрок: %s\tВремя мониторинга: %s\n', dialogText, color, k, (msk_timestamp - v.tmonitor.time))
+                dialogFunc[#dialogFunc + 1] = function()
+                    if inifiles.blacklist[k] == nil then
+                        inifiles.blacklist[k] = false
+                    end
+                    inifiles.blacklist[k] = not inifiles.blacklist[k]
+                end
+                dialogText = string.format('%s{%s}[ЛС Н:%s У:%s Л:%s] [1 Н:%s У:%s Л:%s] [2 Н:%s У:%s Л:%s] [CФ Н:%s У:%s Л:%s\n', dialogText, color, v.tmonitor.lsn, v.tmonitor.lsy,v.tmonitor.lsl,v.tmonitor.n1,v.tmonitor.y1,v.tmonitor.l1,v.tmonitor.n2,v.tmonitor.y2, v.tmonitor.l2, v.tmonitor.sfn,v.tmonitor.sfy,v.tmonitor.sfl)
+                dialogFunc[#dialogFunc + 1] = dialogFunc[#dialogFunc] 
+                dialogText = string.format('%s \n', dialogText)
+                dialogFunc[#dialogFunc + 1] = dialogFunc[#dialogFunc]                                      
+            end
+        end
+        settings_save()
+        sampShowDialog(222, 'Truck-HUD: Блокировка [2]', dialogText, 'Выбрать', 'Назад', 2)
+    end
+    if int == 3 then
+        dialogFunc = {}
+        dialogText = '' -- fa3620
+        for k, v in pairs(chat_mon) do
+            if v ~= nil and v.lsn ~= nil then
+                local color = ( inifiles.blacklist[k] == nil and 'FFFFFF' or ( inifiles.blacklist[k] == true and 'fa3620' or 'FFFFFF'))
+                dialogText = string.format('%s{%s}Игрок: %s\tВремя мониторинга: %s\n', dialogText, color, k, (msk_timestamp - v.time))
+                dialogFunc[#dialogFunc + 1] = function()
+                    if inifiles.blacklist[k] == nil then
+                        inifiles.blacklist[k] = false
+                    end
+                    inifiles.blacklist[k] = not inifiles.blacklist[k]
+                end
+                dialogText = string.format('%s{%s}[ЛС Н:%s У:%s Л:%s] [1 Н:%s У:%s Л:%s] [2 Н:%s У:%s Л:%s] [CФ Н:%s У:%s Л:%s\n', dialogText, color, v.lsn, v.lsy,v.lsl,v.n1,v.y1,v.l1,v.n2,v.y2, v.l2, v.sfn,v.sfy,v.sfl)
+                dialogFunc[#dialogFunc + 1] = dialogFunc[#dialogFunc] 
+                dialogText = string.format('%s \n', dialogText)
+                dialogFunc[#dialogFunc + 1] = dialogFunc[#dialogFunc]                                      
+            end
+        end
+        settings_save()
+        sampShowDialog(222, 'Truck-HUD: Блокировка [3]', dialogText, 'Выбрать', 'Назад', 2)
+    end
+end
+
+function ShowStats(int, param)
+    dialogINT = int
+    if int == 1 then
+        dialogKeytoList = { '1' }
+        dialogText = 'Статистика за всё время\n'
+        local array = {}
+        for k,v in pairs(inifiles.log) do
+            local day, month, year = string.match(k, '(%d+)%.(%d+)%.%d%d(%d+)')
+            local keydate = tonumber( string.format('%02d%02d%02d', year, month, day) )
+            array[keydate] = k
+        end
+        for i = tonumber(os.date('%y%m%d', msk_timestamp)), 1, -1 do
+            if array[i] ~= nil then
+                dialogText = string.format('%s%s\n', dialogText, array[i])
+                dialogKeytoList[#dialogKeytoList + 1] = array[i]
+            end
+        end
+        dialogKeytoList[#dialogKeytoList + 1] = 'nil'
+        dialogKeytoList[#dialogKeytoList + 1] = 'del'
+        dialogText = string.format('%s\n \nУдалить всю статистику', dialogText)
+        sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 2)
+    end
+    if int == 2 then
+        dialogKeytoList = { param[1], param[1], param[1] }
+        dialogText = 'Дата: '..param[1]..'\nСтатистика\nУдалить статистику'
+        sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 5)
+    end
+    if int == 3 then
+        dialogKeytoList = {}
+        dialogText = ''
+        local v = inifiles.log[param[1]][param[2]]
+            if param[2] == 'day' then
+                dialogKeytoList[1] = param[1]
+                dialogText = string.format('Дата: %s{FFFFFF}\nПодсчет:\n %d фур на сумму %d вирт\n %d загрузок на сумму %d вирт\n %d разгрузок на сумму %d вирт\n %d заправок на сумму %d вирт\n %d починок на сумму %d вирт\n %d канистр на сумму %d вирт\n %d штрафов на сумму %d вирт\nИтоги:\n Зарплата: %d вирт\n Затраты: %d вирт\n Прибыль: %d вирт', param[1],
+                    v.arendacount, v.arenda,
+                    v.zagruzkacount, v.zagruzka,
+                    v.razgruzkacount, v.razgruzka, 
+                    v.refillcount, v.refill,
+                    v.repaircount, v.repair,
+                    v.kanistrcount, v.kanistr,
+                    v.shtrafcount, v.shtraf,
+                    v.zp, (v.arenda + v.refill + v.repair + v.kanistr + v.shtraf), v.pribil)
+                    dialogText = string.format('%s\n  \n Лог действий:\n', dialogText, v)
+                    for k, v in pairs(inifiles.log[param[1]].event) do
+                        dialogText = string.format('%s%s\n', dialogText, v)
+                    end
+                    sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 5)
+            else
+                local dd = {}
+                local list = 0
+                for k,v in pairs(v) do
+                    dd[tonumber(k) + 1] = string.format('%s%02d:00\n', dialogText, tonumber(k) )
+                    list = list + 1
+                end
+                for i = 1, 25 do
+                    if dd[i] ~= nil then
+                        dialogText = dd[i]..dialogText
+                        dialogKeytoList[list] = { param[1], param[2],  string.format('%02d', i - 1) }
+                        list = list -1
+                    end
+                end
+                sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 2)
+            end
+    end
+    if int == 4 then
+        dialogKeytoList = {}
+        dialogText = ''
+        local v = inifiles.log[param[1]][param[2]][param[3]]
+        dialogKeytoList[1] = { param[1], param[2] }
+        dialogText = string.format('{FFFFFF}%02d:00 | %s\n\nПодсчет:\n %d фур на сумму %d вирт\n %d загрузок на сумму %d вирт\n %d разгрузок на сумму %d вирт\n %d заправок на сумму %d вирт\n %d починок на сумму %d вирт\n %d канистр на сумму %d вирт\n %d штрафов на сумму %d вирт\nИтоги:\n Зарплата: %d вирт\n Затраты: %d вирт\n Прибыль: %d вирт',
+            tonumber(param[3]), param[1],
+            v.arendacount, v.arenda,
+            v.zagruzkacount, v.zagruzka,
+            v.razgruzkacount, v.razgruzka, 
+            v.refillcount, v.refill,
+            v.repaircount, v.repair,
+            v.kanistrcount, v.kanistr,
+            v.shtrafcount, v.shtraf,
+            v.zp, (v.arenda + v.refill + v.repair + v.kanistr + v.shtraf), v.pribil)
+        sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 5)
+    end
+    if int == 5 then
+        local all = {
+            arenda = 0,
+            arendacount = 0,
+            zagruzka = 0,
+            zagruzkacount = 0,
+            razgruzka = 0,
+            razgruzkacount = 0,
+            pribil = 0,
+            shtraf = 0,
+            shtrafcount = 0,
+            repair = 0,
+            repaircount = 0,
+            refill = 0,
+            refillcount = 0,
+            reys = 0,
+            kanistr = 0,
+            kanistrcount = 0,
+            zp = 0
+        }
+        local day = 0
+        for k,v in pairs(inifiles.log) do
+            day = day + 1
+            for i,s in pairs(v.day) do
+                all[i] = all[i] + s
+            end
+        end
+        dialogText = string.format('Статистика за %d суток{FFFFFF}\nПодсчет:\n %d фур на сумму %d вирт\n %d загрузок на сумму %d вирт\n %d разгрузок на сумму %d вирт\n %d заправок на сумму %d вирт\n %d починок на сумму %d вирт\n %d канистр на сумму %d вирт\n %d штрафов на сумму %d вирт\nИтоги:\n Зарплата: %d вирт\n Затраты: %d вирт\n Прибыль: %d вирт', day,
+                    all.arendacount, all.arenda,
+                    all.zagruzkacount, all.zagruzka,
+                    all.razgruzkacount, all.razgruzka, 
+                    all.refillcount, all.refill,
+                    all.repaircount, all.repair,
+                    all.kanistrcount, all.kanistr,
+                    all.shtrafcount, all.shtraf,
+                    all.zp, (all.arenda + all.refill + all.repair + all.kanistr + all.shtraf), all.pribil)
+        sampShowDialog(222, 'Truck-HUD: Статистика', dialogText, 'Выбрать', 'Назад', 5)
+    end
+end
+
+function WhileShowStats(button, list)
+    if dialogINT == 1 then
+        if button == 1 and dialogKeytoList[list + 1] ~= nil then
+            if list == 0 then
+                ShowStats(5)
+            else
+                if dialogKeytoList[list + 1] == 'nil' then
+                    ShowStats(1)
+                elseif  dialogKeytoList[list + 1] == 'del' then
+                    inifiles.log = {}
+                    logAvailable()
+                    settings_save()
+                    ShowStats(1)
+                else
+                    ShowStats(2, { dialogKeytoList[list + 1] })
+                end
+            end
+        else
+            ShowDialog1(1)
+        end
+        return
+    end
+    if dialogINT == 2 then
+        if button == 1 and dialogKeytoList[list + 1] ~= nil then
+            if list == 1 then
+                inifiles.log[dialogKeytoList[list + 1]] = nil
+                logAvailable()
+                settings_save()
+                ShowStats(1)
+            else
+                ShowStats(3, { dialogKeytoList[list + 1], 'day'})
+            end
+        else
+            ShowStats(1)
+        end
+        return
+    end
+    if dialogINT == 3 then
+        if type(dialogKeytoList[1]) == 'table' then 
+            if button == 1 then
+                ShowStats(4, { dialogKeytoList[list + 1][1], dialogKeytoList[list + 1][2], dialogKeytoList[list + 1][3] })
+            else
+                ShowStats(2, { dialogKeytoList[list + 1][1] })
+            end
+        else
+            if button == 1 then
+                ShowStats(2, { dialogKeytoList[1] })
+            else
+                ShowStats(2, { dialogKeytoList[1] })
+            end
+        end
+        return
+    end
+    if dialogINT == 4 then
+        if button == 1 then
+            ShowStats(3, dialogKeytoList[1])
+        else
+            ShowStats(3, dialogKeytoList[1])
+        end
+        return
+    end
+    if dialogINT == 5 then
+        ShowStats(1)
     end
 end
 
@@ -1458,13 +1747,12 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
         end
 
         dialogLine[#dialogLine + 1] =
-            "Компактная статистика\t" .. (inifiles.Settings.Style == true and "{59fc30}ON" or "{ff0000}OFF")
-        if not inifiles.Settings.Style then
-            dialogLine[#dialogLine + 1] =
-                "Статистика за час\t" .. (inifiles.Stats.Hour == true and "{59fc30}ON" or "{ff0000}OFF")
-            dialogLine[#dialogLine + 1] =
-                "Статистика за сутки\t" .. (inifiles.Stats.Day == true and "{59fc30}ON" or "{ff0000}OFF")
-        end
+            "Редактировать формат статистики\t"
+
+        dialogLine[#dialogLine + 1] =
+            "Cruise Control\t" .. (inifiles.Settings.Cruise == true and "{59fc30}ON" or "{ff0000}OFF")
+
+        dialogLine[#dialogLine + 1] = "Информация о напарнике на HUD\t" .. (inifiles.Settings.pairinfo == true and "{59fc30}ON" or "{ff0000}OFF")
 
         dialogLine[#dialogLine + 1] = "Биндер\t" .. (inifiles.Settings.Binder == true and "{59fc30}ON" or "{ff0000}OFF")
 
@@ -1515,12 +1803,23 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
         dialogLine[#dialogLine + 1] =
             "Скрывать чат профсоюза\t" .. (inifiles.Settings.ChatOFF == true and "{59fc30}ON" or "{ff0000}OFF")
 
+        if inifiles.Settings.ChatOFF == false then 
+            dialogLine[#dialogLine + 1] =
+                "Чат профсоюза только в фуре\t" .. (inifiles.Settings.chat_in_truck == true and "{59fc30}ON" or "{ff0000}OFF")
+        end
+
         dialogLine[#dialogLine + 1] =
             "Убрать тюнинг колес с фур\t" .. (inifiles.Settings.Tuning == false and "{59fc30}ON" or "{ff0000}OFF")
 
         dialogLine[#dialogLine + 1] =
-            "Получение мониторинга с Хостинга\t" ..
-            (inifiles.Settings.MonDownload == true and "{59fc30}ON" or "{ff0000}OFF")
+            "Синхронизация с другими пользователями\t" ..
+            (inifiles.Settings.transponder == true and "{59fc30}ON" or "{ff0000}OFF")
+
+        if inifiles.Settings.transponder then
+            dialogLine[#dialogLine + 1] = 
+            "Карта с позицией напарника\t"..
+            (inifiles.Settings.fastmap == true and "{59fc30}ON" or "{ff0000}OFF")
+        end
 
         dialogLine[#dialogLine + 1] =
             "Цвет подсветки напарника\t{" .. inifiles.Settings.ColorPara .. "}" .. inifiles.Settings.ColorPara -- 6
@@ -1557,6 +1856,16 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
 
         dialogLine[#dialogLine + 1] = "Кнопка для отображения карты\t" .. inifiles.Settings.Key3:gsub("VK_", "") -- 16
 
+        dialogLine[#dialogLine + 1] = "Кнопка для Cruise Control\t" .. inifiles.Settings.Key4:gsub("VK_", "") -- 16
+
+        dialogLine[#dialogLine + 1] = "Локальная блокировка участников"
+
+        dialogLine[#dialogLine + 1] = "Уведомления когда Вас установили напарником\t" .. (inifiles.Settings.NewPairMSG == true and "{59fc30}ON" or "{ff0000}OFF")            
+
+        dialogLine[#dialogLine + 1] = "Авто-Очистка неиспользуемой памяти скрипта\t" .. (inifiles.Settings.AutoClear == true and "{59fc30}ON" or "{ff0000}OFF")
+
+        dialogLine[#dialogLine + 1] = "Очистить неиспользуемую память скрипта\t" .. string.format('%0.2f MB', (tonumber(gcinfo()) / 1000))
+
         dialogLine[#dialogLine + 1] = "Подробная статистика"
 
         dialogLine[#dialogLine + 1] = "Контакты автора"
@@ -1586,6 +1895,7 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
     if int == 4 then
         lua_thread.create(
             function()
+                wait(100)
                 local key = ""
                 repeat
                     wait(0)
@@ -1600,41 +1910,17 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
                         )
                     end
                     for k, v in pairs(vkeys) do
-                        if wasKeyPressed(v) and k ~= "VK_ESCAPE" and k ~= "VK_RETURN" and k ~= "VK_LBUTTON" then
+                        if wasKeyPressed(v) and k ~= "VK_ESCAPE" and k ~= "VK_RETURN" then
                             key = k
                         end
                     end
                 until key ~= ""
                 local ini__name = string.format("Key%d", dtext)
                 inifiles.Settings[ini__name] = key
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
                 ShowDialog1(1)
             end
         )
-    end
-    if int == 5 then
-        if doesDirectoryExist(AdressFolder) then
-            local FileHandle, FileName = findFirstFile(AdressFolder .. "\\Log\\*")
-            if FileHandle ~= nil then
-                local list = 0
-                while FileName ~= nil do
-                    if FileName ~= nil and FileName ~= ".." and FileName ~= "." then
-                        log_files[list] = FileName
-                        list = list + 1
-                    end
-                    FileName = findNextFile(FileHandle)
-                end
-                findClose(FileHandle)
-            end
-        end
-        local text = ""
-        for k, v in pairs(log_files) do
-            text = text .. log_files[k] .. "\n"
-        end
-        sampShowDialog(222, "Truck-HUD: Статистика", text, "Открыть", "Назад", 2)
-    end
-    if int == 6 then
-        sampShowDialog(222, dinput, dtext, "Назад", "", 0)
     end
     if int == 7 then
         sampShowDialog(
@@ -1659,27 +1945,71 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
             1
         )
     end
+    if int == 9 then
+        setClipboardText(inifiles.Settings.stats_text..'\n\n!n! - Для новой строки\n!mn! - Используется для двойного отступа, после !n!\n!skill! - Скилл\n!skill_poc! - Проценты скилла\n!skill_reys! - Остаток рейсов до нового скилла\n!rang! - Ранг\n!rang_poc! - Проценты ранга\n!rang_reys! - Остаток рейсов для нового ранга\n!reys_hour! - Рейсов в этом часу\n!reys_day! - Рейсов за сутки\n!zp_hour! - Зарплата в этом часу\n!all_zp! - Зарплата за сутки\n!profit_hour! - Прибыль в этом часу\n!profit! - Прибыль за сутки')
+        sampShowDialog(
+            222,
+            "Truck-HUD: Редактор HUD",
+            [[{ffffff}Замены для составления HUD статистики
+
+{ff0000}ТЕКУЩИЙ ТЕКСТ HUD ПОМЕЩЕН В ВАШ БУФЕР ОБМЕНА 
+СВЕРНИТЕ ИГРУ
+{ff0000}ОТКРОЙТЕ БЛОКНОТ В WINDOWS И ВСТАВЬТЕ ТУДА ТЕКСТ CTRL + V
+{ff0000}ПОСЛЕ ВНЕСЕНИЯ ИЗМЕНЕНИЙ СКОПИРУЙТЕ КОД СТАТИСТИКИ
+РАЗВЕРНИТЕ ИГРУ И НАЖМИТЕ CОХРАНИТЬ В ДИАЛОГЕ
+{FFFFFF}
+
+ЧТОБЫ ВЕРНУТЬ ВСЕ ПО УМОЛЧАНИЮ СКОПИРУЙТЕ ЦИФРУ 0 И НАЖМИТЕ CОХРАНИТЬ
+ЕСЛИ КОПИРУЮТСЯ ИЕРОГЛИФЫ ВМЕСТО РУССКИХ БУКВ - ПОВТОРИТЕ ВСЕ ТОЖЕ САМОЕ С РУССКОЙ РАКЛАДКОЙ
+
+!n! - Для новой строки
+!mn! - Используется для двойного отступа, после !n!
+
+!skill! - Скилл
+!skill_poc! - Проценты скилла
+!skill_reys! - Остаток рейсов до нового скилла
+
+!rang! - Ранг
+!rang_poc! - Проценты ранга
+!rang_reys! - Остаток рейсов для нового ранга
+
+!reys_hour! - Рейсов в этом часу
+!reys_day! - Рейсов за сутки
+
+!zp_hour! - Зарплата в этом часу
+!all_zp! - Зарплата за сутки
+
+!zatrat_hour! - Затраты в этом часу
+!zatrat_day! - Затраты за сутки
+
+!profit_hour! - Прибыль в этом часу
+!profit! - Прибыль за сутки]],
+            "Сохранить",
+            "Назад",
+            0
+        )
+    end
 end
 
 function FindSklad(x, y, z)
-	local minDist, minResult = 1000000, ""
-	local pos = {
-	["Нефть 1"] = {x = 256.02127075195, y = 1414.8492431641, z = 10.232398033142},
-	["Уголь 1"] = {x = 832.10766601563, y = 864.03668212891, z = 11.643839836121},
-	["Лес 1"] = {x = -448.91455078125, y = -65.951385498047, z = 58.959014892578},
-	["Нефть 2"] = {x = -1046.7521972656, y = -670.66937255859, z = 31.885597229004},
-	["Уголь 2"] = {x = -2913.8544921875, y = -1377.0952148438, z = 10.762256622314},
-	["Лес 2"] = {x = -1978.8649902344, y = -2434.9421386719, z = 30.192840576172},
-	["Порт ЛС"] = {x = 2614.2241210938, y = -2228.8745117188, z = 12.905993461609},
-	["Порт СФ"] = {x = -1733.1876220703, y = 120.08413696289, z = 3.1192970275879}
+    local minDist, minResult = 1000000, ""
+    local pos = {
+    ["Нефть 1"] = {x = 256.02127075195, y = 1414.8492431641, z = 10.232398033142},
+    ["Уголь 1"] = {x = 832.10766601563, y = 864.03668212891, z = 11.643839836121},
+    ["Лес 1"] = {x = -448.91455078125, y = -65.951385498047, z = 58.959014892578},
+    ["Нефть 2"] = {x = -1046.7521972656, y = -670.66937255859, z = 31.885597229004},
+    ["Уголь 2"] = {x = -2913.8544921875, y = -1377.0952148438, z = 10.762256622314},
+    ["Лес 2"] = {x = -1978.8649902344, y = -2434.9421386719, z = 30.192840576172},
+    ["Порт ЛС"] = {x = 2614.2241210938, y = -2228.8745117188, z = 12.905993461609},
+    ["Порт СФ"] = {x = -1733.1876220703, y = 120.08413696289, z = 3.1192970275879}
     }
-	for name, cord in pairs(pos) do
-		local distance = getDistanceBetweenCoords3d(x, y, z, cord.x, cord.y, cord.z)
-		if distance < minDist then
-			minDist = distance
+    for name, cord in pairs(pos) do
+        local distance = getDistanceBetweenCoords3d(x, y, z, cord.x, cord.y, cord.z)
+        if distance < minDist then
+            minDist = distance
             minResult = name
-		end
-	end
+        end
+    end
     return { text = minResult, dist = minDist }
 end
 
@@ -1687,6 +2017,14 @@ function sampev.onServerMessage(color, message)
     if message == " У вас бан чата!" then
         delay.chatMon = 0
         delay.chat = 0
+    end
+    if script_run and string.find(message, " Вы заработали (.+) вирт%. Деньги будут зачислены на ваш банковский счет в .+") then
+        local string = string.match(message, " Вы заработали (.+) вирт%. Деньги будут зачислены на ваш банковский счет в .+")
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp = string:find('/') and string:match('(%d+) /') or string
+        if delay.paycheck == 2 then
+            delay.paycheck = 0
+            return false
+        end 
     end
     if string.find(message, " .+<.+>: .+") and inifiles ~= nil then
         if string.find(message, my_nick) then
@@ -1698,6 +2036,10 @@ function sampev.onServerMessage(color, message)
         end
         if inifiles.Settings.ChatOFF then
             return false
+        else
+            if inifiles.Settings.chat_in_truck and not isTruckCar() then
+                return false
+            end
         end
         if script_run then
             if pair_mode and inifiles.Settings.LightingPara and string.find(message, pair_mode_name) then
@@ -1757,8 +2099,6 @@ function sampev.onServerMessage(color, message)
             " (.*)<(.*)>: %[ЛС Н:(%d+) У:(%d+) Л:(%d+)%] %[1 Н:(%d+) У:(%d+) Л:(%d+)%] %[2 Н:(%d+) У:(%d+) Л:(%d+)%] %[CФ Н:(%d+) У:(%d+) Л:(%d+)%]"
         )
      then
-        mon_life = os.time()
-        mon_ctime = msk_timestamp
         if (string.find(message, "Купил") or string.find(message, "Продал")) then
             nick,
                 rank,
@@ -1777,7 +2117,7 @@ function sampev.onServerMessage(color, message)
                 _ =
                 string.match(
                 message,
-                " (.*)<(.*)>: %[ЛС Н:(%d+) У:(%d+) Л:(%d+)%] %[1 Н:(%d+) У:(%d+) Л:(%d+)%] %[2 Н:(%d+) У:(%d+) Л:(%d+)%] %[CФ Н:(%d+) У:(%d+) Л:(%d+)%] %[(.*)%]"
+                " (.*)%[.+%]<(.*)>: %[ЛС Н:(%d+) У:(%d+) Л:(%d+)%] %[1 Н:(%d+) У:(%d+) Л:(%d+)%] %[2 Н:(%d+) У:(%d+) Л:(%d+)%] %[CФ Н:(%d+) У:(%d+) Л:(%d+)%] %[(.*)%]"
             )
         else
             nick,
@@ -1796,39 +2136,57 @@ function sampev.onServerMessage(color, message)
                 prices_smon.sfl =
                 string.match(
                 message,
-                " (.*)<(.*)>: %[ЛС Н:(%d+) У:(%d+) Л:(%d+)%] %[1 Н:(%d+) У:(%d+) Л:(%d+)%] %[2 Н:(%d+) У:(%d+) Л:(%d+)%] %[CФ Н:(%d+) У:(%d+) Л:(%d+)%]"
+                " (.*)%[.+%]<(.*)>: %[ЛС Н:(%d+) У:(%d+) Л:(%d+)%] %[1 Н:(%d+) У:(%d+) Л:(%d+)%] %[2 Н:(%d+) У:(%d+) Л:(%d+)%] %[CФ Н:(%d+) У:(%d+) Л:(%d+)%]"
             )
         end
-        prices_mon.lsn = prices_smon.lsn * 100
-        prices_mon.lsy = prices_smon.lsy * 100
-        prices_mon.lsl = prices_smon.lsl * 100
-        prices_mon.sfn = prices_smon.sfn * 100
-        prices_mon.sfy = prices_smon.sfy * 100
-        prices_mon.sfl = prices_smon.sfl * 100
-        prices_mon.n1 = prices_smon.n1 * 100
-        prices_mon.n2 = prices_smon.n2 * 100
-        prices_mon.y1 = prices_smon.y1 * 100
-        prices_mon.y2 = prices_smon.y2 * 100
-        prices_mon.l1 = prices_smon.l1 * 100
-        prices_mon.l2 = prices_smon.l2 * 100
+        chat_mon[nick] = prices_smon
+        chat_mon[nick].time = msk_timestamp
+        if inifiles.blacklist[nick] == nil then
+            inifiles.blacklist[nick] = false
+        end
+        if (not inifiles.Settings.blacklist_inversion and inifiles.blacklist[nick] == false) or (inifiles.Settings.blacklist_inversion and inifiles.blacklist[nick] == true) then
+            mon_life = msk_timestamp
+            mon_ctime = msk_timestamp
+            prices_mon.lsn = prices_smon.lsn * 100
+            prices_mon.lsy = prices_smon.lsy * 100
+            prices_mon.lsl = prices_smon.lsl * 100
+            prices_mon.sfn = prices_smon.sfn * 100
+            prices_mon.sfy = prices_smon.sfy * 100
+            prices_mon.sfl = prices_smon.sfl * 100
+            prices_mon.n1 = prices_smon.n1 * 100
+            prices_mon.n2 = prices_smon.n2 * 100
+            prices_mon.y1 = prices_smon.y1 * 100
+            prices_mon.y2 = prices_smon.y2 * 100
+            prices_mon.l1 = prices_smon.l1 * 100
+            prices_mon.l2 = prices_smon.l2 * 100
+        end
     end
 
     if string.find(message, " Нефть: (%d+) / (%d+)") then
+        if current_load ~= 0 then
+            check_noLoad = true
+        end
         local S1, S2 = string.match(message, " Нефть: (%d+) / (%d+)")
         if tonumber(S1) ~= 0 then
             current_load = 1
+            check_noLoad = false
         end
     end
     if string.find(message, " Уголь: (%d+) / (%d+)") then
         local S1, S2 = string.match(message, " Уголь: (%d+) / (%d+)")
         if tonumber(S1) ~= 0 then
             current_load = 2
+            check_noLoad = false
         end
     end
     if string.find(message, " Дерево: (%d+) / (%d+)") then
         local S1, S2 = string.match(message, " Дерево: (%d+) / (%d+)")
         if tonumber(S1) ~= 0 then
             current_load = 3
+            check_noLoad = false
+        end
+        if check_noLoad and current_load ~= 0 then
+            current_load = 0
         end
     end
     if string.find(message, " Извините, мы вас немного задержим, нужно подготовить груз. Осталось (%d+) секунд") then
@@ -1869,7 +2227,9 @@ function sampev.onServerMessage(color, message)
     end -- /jf chat error
 
     if string.find(message, "===============%[(%d+):(%d+)%]===============") then
-        ReadLog()
+        payday = msk_timestamp
+        write_table_log('payday', {0}, 9)
+        settings_save()
     end -- Log update
 
     if
@@ -1881,7 +2241,24 @@ function sampev.onServerMessage(color, message)
     end
 
     if string.find(message, "Загружено %d+ груза, на сумму (%d+) вирт. Скидка: %d+ вирт") and isTruckCar() then
-        WriteLog(message, 1)
+        timer = msk_timestamp
+        local Z1, Z2, Z3 = string.match(message, " Загружено (%d+) груза, на сумму (%d+) вирт. Скидка: (%d+) вирт")
+        gruzLOAD = Z1
+        if texts_of_reports[current_warehouse] ~= nil then
+            local cena = (Z2 + Z3) / (Z1 / 1000)
+            local sklad = texts_of_reports[current_warehouse]
+            local modelId = getCharModel(PLAYER_PED)
+            report_text =
+                (not inifiles.Settings.girl and "Загрузился" or "Загрузилась") .. " на " .. sklad .. " по " .. cena
+            sms_pair_mode = report_text
+            if inifiles.Settings.Report then
+                delay.chat = 1
+            end
+            if pair_mode and inifiles.Settings.SMSpara then
+                delay.sms = 1
+            end
+        end
+        write_table_log('zagruzka', {Z2}, 1)
         delay.load = 0
         if script_run then
             if inifiles.Settings.ChatDoklad then
@@ -1896,11 +2273,33 @@ function sampev.onServerMessage(color, message)
         end
     end
 
-    if
-        string.find(message, "Вы заработали (%d+) вирт, из которых (%d+) вирт будет добавлено к вашей зарплате") and
-            isTruckCar()
-     then
-        WriteLog(message, 2)
+    if string.find(message, "Вы заработали (%d+) вирт, из которых (%d+) вирт будет добавлено к вашей зарплате") and isTruckCar() then
+        timer = msk_timestamp
+        local Z1, Z2 =
+            string.match(message, " Вы заработали (%d+) вирт, из которых (%d+) вирт будет добавлено к вашей зарплате")
+        if texts_of_reports[current_warehouse] ~= nil and gruzLOAD ~= nil then
+            local cena = Z1 / (gruzLOAD / 1000)
+            local sklad = texts_of_reports[current_warehouse]
+            local modelId = getCharModel(PLAYER_PED)
+            report_text = "Разгрузил" .. (not inifiles.Settings.girl and " " or "а ") .. sklad .. " по " .. cena
+            sms_pair_mode = report_text
+            if inifiles.Settings.Report then
+                delay.chat = 1
+            end
+            if pair_mode and inifiles.Settings.SMSpara then
+                delay.sms = 1
+            end
+        end
+        if inifiles.Trucker.MaxZP > tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp + Z2) then
+            write_table_log('razgruzka', {Z1, Z2, (Z1 - Z2)}, 2)
+        else
+            if tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp) ~= inifiles.Trucker.MaxZP then
+                local param4 = ((tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp) + Z2) - 
+                    inifiles.Trucker.MaxZP - Z2)
+                local param5 = string.match(param4, "-(.*)")
+                write_table_log('razgruzka', {param5, param5, 0}, 2)
+            end 
+        end
         delay.unload = 0
         if script_run then
             if inifiles.Settings.ChatDoklad then
@@ -1915,6 +2314,7 @@ function sampev.onServerMessage(color, message)
         if inifiles.Settings.AutoOFF then
             auto = false
         end
+        delay.paycheck = 1
     end
     if message == " Не флуди!" then
         if delay.skill == 2 then
@@ -1943,41 +2343,41 @@ function sampev.onServerMessage(color, message)
         delay.dir = 0
     end
     if string.find(message, " Вы арендовали транспортное средство") and isTruckCar() then
-        WriteLog(message, 3)
+        local message = sampGetDialogText()
+        if string.find(message, "Стоимость") then
+            local Z1 = string.match(message, "Стоимость аренды: {FFFF00}(%d+) вирт")
+            write_table_log('arenda', {Z1}, 3)
+        end
     end
     if string.find(message, " Вы заплатили штраф (%d+) вирт, Офицеру (%g+)") then
-        WriteLog(message, 4)
+        local Z1, Z2 = string.match(message, " Вы заплатили штраф (%d+) вирт, Офицеру (%g+)")
+        write_table_log('shtraf', {Z1, message}, 4)
     end
     if string.find(message, " Вашу машину отремонтировал%(а%) за (%d+) вирт, Механик (%g+)") and isTruckCar() then
-        WriteLog(message, 5)
+        local Z1, Z2 = string.match(message, " Вашу машину отремонтировал%(а%) за (%d+) вирт, Механик (%g+)")
+        write_table_log('repair', {Z1}, 5)
     end
     if string.find(message, " Автомеханик (%g+) заправил ваш автомобиль на 300 за (%d+) вирт") and isTruckCar() then
-        WriteLog(message, 6)
+        local Z1, Z2 = string.match(message, " Автомеханик (%g+) заправил ваш автомобиль на 300 за (%d+) вирт")
+        write_table_log('refill', {Z2}, 6)
     end
     if string.find(message, " Машина заправлена, за: (%d+) вирт") and isTruckCar() then
-        WriteLog(message, 7)
+        local Z1 = string.match(message, " Машина заправлена, за: (%d+) вирт")
+        write_table_log('refill', {Z1}, 7)
     end
     if string.find(message, " Вы купили канистру с 50 литрами бензина за (%d+) вирт") and isTruckCar() then
-        WriteLog(message, 8)
+        local Z1 = string.match(message, " Вы купили канистру с 50 литрами бензина за (%d+) вирт")
+        write_table_log('kanistr', {Z1}, 8)
     end
 end
 
 function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtext)
-    if
-        Dstyle == 0 and string.find(Dtext, "{00AB06}Дальнобойщик{CECECE}") and
-            string.find(Dtext, "{00AB06}Механик{CECECE}")
-     then
-        local Skill, SkillP, Rank, RankP =
-            string.match(
-            Dtext,
-            ".+{00AB06}Дальнобойщик{CECECE}.*Скилл: (%d+)	Опыт: .+ (%d+%.%d+)%%.*{CECECE}Ранг: (%d+)  	Опыт: .+ (%d+%.%d+)%%"
-        )
+    if Dstyle == 0 and string.find(Dtext, "{00AB06}Дальнобойщик{CECECE}") and string.find(Dtext, "{00AB06}Механик{CECECE}") then
+        local Skill, SkillP, Rank, RankP = string.match( Dtext, ".+{00AB06}Дальнобойщик{CECECE}.*Скилл: (%d+)\tОпыт: .+ (%d+%.%d+)%%.*{CECECE}Ранг: (%d+)  \tОпыт: .+ (%d+%.%d+)%%")
         if SkillP ~= nil then
             SkillP = tonumber(SkillP)
             RankP = tonumber(RankP)
             if inifiles.Trucker.ProcSkill ~= SkillP then
-                --inifiles.Trucker.ReysSkill = math.ceil((100.0 - SkillP) / (SkillP - inifiles.Trucker.ProcSkill))
-                --inifiles.Trucker.ProcSkill = SkillP
                 Skill = tonumber(Skill)
                 local gruzs =
                     (Skill < 10 and 10000 or
@@ -1994,8 +2394,8 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
             end
             inifiles.Trucker.Skill = Skill
             inifiles.Trucker.Rank = Rank
-            inifiles.Trucker.MaxZP = 50000 + (2500 * (1.1 ^ Skill)) + (2500 * (1.1 ^ Rank))
-            inicfg.save(inifiles, AdressIni)
+            inifiles.Trucker.MaxZP = math.ceil( 50000 + (2500 * (1.1 ^ Skill)) + (2500 * (1.1 ^ Rank)) )
+            settings_save()
         end
         if delay.skill ~= 0 then
             delay.skill = 0
@@ -2005,7 +2405,7 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
 
     if DdialogId == 22 and Dstyle == 0 and string.find(Dtext, "Заводы") then
         delay.mon = 0
-        mon_life = os.time()
+        mon_life = msk_timestamp
         mon_time = msk_timestamp
         prices_mon.n1, prices_mon.n2, prices_mon.y1, prices_mon.y2, prices_mon.l1, prices_mon.l2, prices_mon.lsn, prices_mon.lsy, prices_mon.lsl, prices_mon.sfn, prices_mon.sfy, prices_mon.sfl = string.match( Dtext, "[Заводы].*Нефтезавод №1.*.*Нефть: 0.(%d+) вирт.*Нефтезавод №2.*.*Нефть: 0.(%d+) вирт.*Склад угля №1.*.*Уголь: 0.(%d+) вирт.*Склад угля №2.*.*Уголь: 0.(%d+) вирт.*Лесопилка №1.*.*Дерево: 0.(%d+) вирт.*Лесопилка №2.*.*Дерево: 0.(%d+) вирт.*[Порты].*Порт ЛС.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт.*Порт СФ.*.*Нефть: 0.(%d+) вирт.*.*Уголь: 0.(%d+) вирт.*.*Дерево: 0.(%d+) вирт" )
 
@@ -2029,8 +2429,8 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
             sfy = prices_mon.sfy,
             sfl = prices_mon.sfl,
             time = msk_timestamp
-    	}
-    	inicfg.save(inifiles, AdressIni)
+        }
+        settings_save()
 
         if delay.chatMon == -1 then
             SendMonText =
@@ -2052,6 +2452,7 @@ function sampev.onShowDialog(DdialogId, Dstyle, Dtitle, Dbutton1, Dbutton2, Dtex
             delay.chatMon = 1
         end
         if script_run then
+            transponder_delay = 100
             return false
         end
     end
@@ -2090,8 +2491,8 @@ function sampev.onCreate3DText(id, color, position, distance, testLOS, attachedP
         function(id, color, position, distance, testLOS, attachedPlayerId, attachedVehicleId, textt)
             for k, v in pairs(find_3dText) do
                 if string.find(text, v) then
-                    if (os.time() - id_3D_text) > 1 then
-                        wait_auto = os.time()
+                    if (msk_timestamp - id_3D_text) > 1 then
+                        wait_auto = msk_timestamp
                     end
                     id_3D_text = id
                     if text:find("Порт") then
@@ -2162,304 +2563,128 @@ end
 
 function sampev.onRemove3DTextLabel(Cid) -- f3d2
     if id_3D_text == Cid then
-        id_3D_text = os.time()
+        id_3D_text = msk_timestamp
         load_location = false
         unload_location = false
         current_warehouse = "none"
     end
 end
 
-function WriteLog(message, Log)
-    Write = 0
-    WriteText = ""
-    if Log == 1 then
-        timer = os.time()
-        local Z1, Z2, Z3 = string.match(message, " Загружено (%d+) груза, на сумму (%d+) вирт. Скидка: (%d+) вирт")
-        gruzLOAD = Z1
-        if texts_of_reports[current_warehouse] ~= nil then
-            local cena = (Z2 + Z3) / (Z1 / 1000)
-            local sklad = texts_of_reports[current_warehouse]
-            local modelId = getCharModel(PLAYER_PED)
-            report_text =
-                (not inifiles.Settings.girl and "Загрузился" or "Загрузилась") .. " на " .. sklad .. " по " .. cena
-            sms_pair_mode = report_text
-            if inifiles.Settings.Report then
-                delay.chat = 1
-            end
-            if pair_mode and inifiles.Settings.SMSpara then
-                delay.sms = 1
-            end
-        end
-        if inifiles.Trucker.MaxZP > log.ZPH then
-            WriteText = os.date("%X", os.time()) .. " | Загрузка " .. Z2 .. "\n"
-            log_save_text = os.date("%X", os.time()) .. " | Загрузка " .. Z2
-            Write = 1
+function write_table_log(key, param, Log)
+    if Log >= 3 and Log ~= 9 then
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] - tonumber(param[1])
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] - tonumber(param[1])
+
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] + tonumber(param[1])
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] + tonumber(param[1])
+    end
+    if inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key..'count'] ~= nil then
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key..'count'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key..'count'] + 1
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key..'count'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key..'count'] + 1
+    end
+
+    if key == 'zagruzka' then
+        inifiles.Settings.DataLoad = os.date("%d.%m.%Y", msk_timestamp)
+        inifiles.Settings.HourLoad = os.date("%H", msk_timestamp)
+        if inifiles.Trucker.MaxZP > tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp) then
+            inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] - tonumber(param[1])
+            inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] - tonumber(param[1])
+
+            inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] + tonumber(param[1])
+            inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] + tonumber(param[1])
         end
     end
-    if Log == 2 then
-        timer = os.time()
-        local Z1, Z2 =
-            string.match(message, " Вы заработали (%d+) вирт, из которых (%d+) вирт будет добавлено к вашей зарплате")
-        if texts_of_reports[current_warehouse] ~= nil and gruzLOAD ~= nil then
-            local cena = Z1 / (gruzLOAD / 1000)
-            local sklad = texts_of_reports[current_warehouse]
-            local modelId = getCharModel(PLAYER_PED)
-            report_text = "Разгрузил" .. (not inifiles.Settings.girl and " " or "а ") .. sklad .. " по " .. cena
-            sms_pair_mode = report_text
-            if inifiles.Settings.Report then
-                delay.chat = 1
-            end
-            if pair_mode and inifiles.Settings.SMSpara then
-                delay.sms = 1
-            end
-        end
-        local Z3 = Z1 - Z2
-        if inifiles.Trucker.MaxZP > (log.ZPH + Z2) then
-            if workload == 1 then
-                WriteText =
-                    os.date("%X", os.time()) ..
-                    " | Загрузка " ..
-                        Z3 ..
-                            "\n" ..
-                                os.date("%X", os.time()) ..
-                                    " | Разгрузка " ..
-                                        Z1 .. "\n" .. os.date("%X", os.time()) .. " | Заработано " .. Z2 .. "\n"
-                Write = 2
+
+    if key == 'razgruzka' then
+        if inifiles.Trucker.MaxZP > tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp)then 
+            if inifiles.Settings.HourLoad ~= os.date("%H", msk_timestamp) or inifiles.Settings.DataLoad ~= os.date("%d.%m.%Y", msk_timestamp)  then
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['zp'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['zp'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['zp'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['zp'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] + tonumber(param[1])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] + tonumber(param[1])
             else
-                WriteText =
-                    os.date("%X", os.time()) ..
-                    " | Разгрузка " .. Z1 .. "\n" .. os.date("%X", os.time()) .. " | Заработано " .. Z2 .. "\n"
-                Write = 1
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['zp'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['zp'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['zp'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['zp'] + tonumber(param[2])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)]['pribil'] + tonumber(param[1])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day['pribil'] + tonumber(param[1])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)][key] + tonumber(param[1])
+                inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] = inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].day[key] + tonumber(param[1])
             end
-        else
-            if log.ZPH ~= inifiles.Trucker.MaxZP then
-                local Z4 = ((log.ZPH + Z2) - inifiles.Trucker.MaxZP - Z2)
-                local Z5 = string.match(Z4, "-(.*)")
-                if workload == 1 then
-                    WriteText =
-                        os.date("%X", os.time()) ..
-                        " | Загрузка 0\n" ..
-                            os.date("%X", os.time()) ..
-                                " | Разгрузка " ..
-                                    Z5 .. "\n" .. os.date("%X", os.time()) .. " | Заработано " .. Z5 .. "\n"
-                    Write = 2
-                else
-                    WriteText =
-                        os.date("%X", os.time()) ..
-                        " | Разгрузка " .. Z5 .. "\n" .. os.date("%X", os.time()) .. " | Заработано " .. Z5 .. "\n"
-                    Write = 1
-                end
-            end
+            inifiles.Settings.HourLoad = os.date("%H", msk_timestamp)
+            inifiles.Settings.DataLoad = os.date("%d.%m.%Y", msk_timestamp)
         end
     end
-    if Log == 3 then
-        local message = sampGetDialogText()
-        if string.find(message, "Стоимость") then
-            local Z1 = string.match(message, "Стоимость аренды: {FFFF00}(%d+) вирт")
-            WriteText = os.date("%X", os.time()) .. " | Аренда " .. Z1 .. "\n"
-            Write = 1
-        end
+
+    local text_to_log = {
+        [1] = { string.format('Загрузка за %s$ %s', param[1], (inifiles.Trucker.MaxZP < tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp) and ' [Достигнут лимит зарплаты]' or '') )},
+        [2] = { string.format('Разгрузка за %s$ | Заработано %s$ %s', param[1], param[2], (inifiles.Trucker.MaxZP < tonumber(inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)].zp) and ' [Достигнут лимит зарплаты]' or '')) },
+        [3] = { string.format('Аренда фуры за %s$', param[1]) },
+        [4] = { string.format('Штраф %s$ офицеру %s', param[1], param[2]) },
+        [5] = { string.format('Починка фуры за %s$', param[1]) },
+        [6] = { string.format('Заправка фуры за %s$', param[1]) },
+        [7] = { string.format('Заправка фуры за %s$', param[1]) },
+        [8] = { string.format('Покупка канистры за %s$', param[1]) },
+        [9] = { string.format('PayDay') }
+    }
+    for k, v in pairs(text_to_log[Log]) do
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].event[#inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].event + 1] = os.date("%X", msk_timestamp).." | "..v
     end
-    if Log == 4 then
-        local Z1, Z2 = string.match(message, " Вы заплатили штраф (%d+) вирт, Офицеру (%g+)")
-        WriteText = os.date("%X", os.time()) .. " | Штраф " .. Z1 .. "\n"
-        Write = 1
-    end
-    if Log == 5 then
-        local Z1, Z2 = string.match(message, " Вашу машину отремонтировал%(а%) за (%d+) вирт, Механик (%g+)")
-        WriteText = os.date("%X", os.time()) .. " | Ремонт " .. Z1 .. "\n"
-        Write = 1
-    end
-    if Log == 6 then
-        local Z1, Z2 = string.match(message, " Автомеханик (%g+) заправил ваш автомобиль на 300 за (%d+) вирт")
-        WriteText = os.date("%X", os.time()) .. " | Заправка " .. Z2 .. "\n"
-        Write = 1
-    end
-    if Log == 7 then
-        local Z1 = string.match(message, " Машина заправлена, за: (%d+) вирт")
-        WriteText = os.date("%X", os.time()) .. " | Заправка " .. Z1 .. "\n"
-        Write = 1
-    end
-    if Log == 8 then
-        local Z1 = string.match(message, " Вы купили канистру с 50 литрами бензина за (%d+) вирт")
-        WriteText = os.date("%X", os.time()) .. " | Покупка канистры " .. Z1 .. "\n"
-        Write = 1
-    end
-    if Write > 0 then
-        local adress = AdressLogFolder .. os.date("%d.%m.%Y") .. ".txt"
-        if Write == 1 then
-            file = io.open(adress, "a")
-            file:write(WriteText)
-            file:flush()
-            io.close(file)
-        end
-        if Write == 2 then
-            file = io.open(adress, "r")
-            local fileText = ""
-            if file ~= nil then
-                for line in file:lines() do
-                    if line ~= log_save_text then
-                        fileText = fileText .. line .. "\n"
-                    end
-                end
-                io.close(file)
-            end
-            file = io.open(adress, "w")
-            file:write(fileText .. WriteText)
-            file:flush()
-            io.close(file)
-        end
-        ReadLog()
-    end
+    settings_save()
 end
 
-function ReadLog(is, ss)
-    local logs = {
-        arenda = 0,
-        arendah = 0,
-        zagruzka = 0,
-        zagruzkah = 0,
-        razgruzka = 0,
-        razgruzkah = 0,
-        pribil = 0,
-        pribilh = 0,
-        shtraf = 0,
-        shtrafh = 0,
-        repair = 0,
-        repairh = 0,
-        refill = 0,
-        refillh = 0,
-        reys = 0,
-        reysh = 0,
-        kanistr = 0,
-        kanistrh = 0
-    }
-    if is == nil then
-        adress = AdressLogFolder .. os.date("%d.%m.%Y") .. ".txt"
-    else
-        adress = is
+function logAvailable()
+    if msk_timestamp == 0 then return end
+    if inifiles.log == nil then
+        inifiles.log = {}
+        settings_save()
     end
-    local file = io.open(adress, "r")
-    if file ~= nil then
-        local time = os.date("%X", os.time())
-        local H, M, S = string.match(time, "(%d+):(%d+):(%d+)")
-        for line in file:lines() do
-            if string.find(line, "Аренда") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Аренда (%d+)")
-                local time = os.date("%X", os.time())
-                local H, M, S = string.match(time, "(%d+):(%d+):(%d+)")
-                if H == H1 then
-                    logs.arendah = logs.arendah + A
-                    logs.arenda = logs.arenda + A
-                else
-                    logs.arenda = logs.arenda + A
-                end
-            end
-            if string.find(line, "Загрузка") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Загрузка (%d+)")
-                if H == H1 then
-                    logs.zagruzkah = logs.zagruzkah + A
-                    logs.zagruzka = logs.zagruzka + A
-                else
-                    logs.zagruzka = logs.zagruzka + A
-                end
-            end
-            if string.find(line, "Разгрузка") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Разгрузка (%d+)")
-                if H == H1 then
-                    logs.reys = logs.reys + 1
-                    logs.reysh = logs.reysh + 1
-                    logs.razgruzkah = logs.razgruzkah + A
-                    logs.razgruzka = logs.razgruzka + A
-                else
-                    logs.reys = logs.reys + 1
-                    logs.razgruzka = logs.razgruzka + A
-                end
-            end
-            if string.find(line, "Заработано") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Заработано (%d+)")
-                if H == H1 then
-                    logs.pribilh = logs.pribilh + A
-                    logs.pribil = logs.pribil + A
-                else
-                    logs.pribil = logs.pribil + A
-                end
-            end
-            if string.find(line, "Штраф") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Штраф (%d+)")
-                if H == H1 then
-                    logs.shtrafh = logs.shtraf + A
-                    logs.shtraf = logs.shtraf + A
-                else
-                    logs.shtraf = logs.shtraf + A
-                end
-            end
-            if string.find(line, "Ремонт") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Ремонт (%d+)")
-                if H == H1 then
-                    logs.repairh = logs.repairh + A
-                    logs.repair = logs.repair + A
-                else
-                    logs.repair = logs.repair + A
-                end
-            end
-            if string.find(line, "Заправка") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Заправка (%d+)")
-                if H == H1 then
-                    logs.refillh = logs.refillh + A
-                    logs.refill = logs.refill + A
-                else
-                    logs.refill = logs.refill + A
-                end
-            end
-            if string.find(line, "Покупка канистры") then
-                local H1, M1, S1, A = string.match(line, "(%d+):(%d+):(%d+) | Покупка канистры (%d+)")
-                if H == H1 then
-                    logs.kanistrh = logs.kanistrh + A
-                    logs.kanistr = logs.kanistr + A
-                else
-                    logs.kanistr = logs.kanistr + A
-                end
-            end
-        end
-        io.close(file)
+    if inifiles.log[os.date("%d.%m.%Y", msk_timestamp)] == nil then
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)] = { 
+            event = {}, 
+            hour = {},
+            day = {
+                arenda = 0,
+                arendacount = 0,
+                zagruzka = 0,
+                zagruzkacount = 0,
+                razgruzka = 0,
+                razgruzkacount = 0,
+                pribil = 0,
+                shtraf = 0,
+                shtrafcount = 0,
+                repair = 0,
+                repaircount = 0,
+                refill = 0,
+                refillcount = 0,
+                kanistr = 0,
+                kanistrcount = 0,
+                zp = 0
+            }
+        }
+        settings_save()
     end
-    if is == nil then
-        log.ReysH = logs.reysh
-        log.Reys = logs.reys
-        log.ZPH = logs.pribilh
-        log.ZP = logs.pribil
-        log.PribH =
-            logs.razgruzkah - logs.zagruzkah - logs.shtrafh - logs.repairh - logs.refillh - logs.arendah - logs.kanistrh
-        log.Prib = logs.razgruzka - logs.zagruzka - logs.shtraf - logs.repair - logs.refill - logs.arenda - logs.kanistr
-        log.ZatrH = log.ZPH - log.PribH
-        log.Zatr = log.ZP - log.Prib
-    else
-        local prib =
-            logs.razgruzka - logs.zagruzka - logs.shtraf - logs.repair - logs.refill - logs.arenda - logs.kanistr
-        local text =
-            "{FFFFFF}     Статистика за сутки\n Рейсов сделано: " ..
-            logs.reys ..
-                "\n Зарплаты получено: " ..
-                    logs.pribil ..
-                        "$\n Прибыль: " ..
-                            prib ..
-                                "$\n\n\tЗатраты\n Аренда: " ..
-                                    logs.arenda ..
-                                        "$\n Заправка: " ..
-                                            logs.refill ..
-                                                "$\n Починка: " ..
-                                                    logs.repair ..
-                                                        "$\n Канистры: " ..
-                                                            logs.kanistr ..
-                                                                "$\n Штрафы: " ..
-                                                                    logs.shtraf ..
-                                                                        "$\n Все затраты: " ..
-                                                                            (logs.arenda + logs.refill + logs.repair +
-                                                                                logs.kanistr +
-                                                                                logs.shtraf) ..
-                                                                                "$"
-        ShowDialog1(6, text, ss)
+    if inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)] == nil then
+        inifiles.log[os.date("%d.%m.%Y", msk_timestamp)].hour[os.date("%H", msk_timestamp)] = {
+            arenda = 0,
+            arendacount = 0,
+            zagruzka = 0,
+            zagruzkacount = 0,
+            razgruzka = 0,
+            razgruzkacount = 0,
+            pribil = 0,
+            shtraf = 0,
+            shtrafcount = 0,
+            repair = 0,
+            repaircount = 0,
+            refill = 0,
+            refillcount = 0,
+            kanistr = 0,
+            kanistrcount = 0,
+            zp = 0
+        }
+        settings_save()
     end
 end
 
@@ -2480,15 +2705,13 @@ function sampev.onSendChat(message)
 end
 function sampev.onSendCommand(cmd)
     local command, params = string.match(cmd, "^%/([^ ]*)(.*)")
-    if command ~= nil and command:lower() == "coord" then
-        local X, Y, Z = getCharCoordinates(PLAYER_PED)
-        Z = getGroundZFor3dCoord(X, Y, Z)
-        setClipboardText(X .. ", " .. Y .. ", " .. Z)
-    end
     if command ~= nil and params ~= nil and command:lower() == "truck" then
+        if params == ' test' then
+            write_table_log('arenda', {'10000'}, 3)
+        end
         if params:lower() == " ad" then
             inifiles.Settings.ad = not inifiles.Settings.ad
-            inicfg.save(inifiles, AdressIni)
+            settings_save()
             sampAddChatMessage(
                 string.format(
                     "Уведомления об обновлениях Truck HUD %s",
@@ -2506,11 +2729,11 @@ function sampev.onSendCommand(cmd)
                         "https://raw.githubusercontent.com/Serhiy-Rubin/TruckHUD/master/changelog",
                         fpath,
                         function(id, status, p1, p2)
-							if stop_downloading_3 then
-								stop_downloading_3 = false
-								download_id_3 = nil
-								return false
-							end
+                            if stop_downloading_3 then
+                                stop_downloading_3 = false
+                                download_id_3 = nil
+                                return false
+                            end
                             if status == dlstatus.STATUS_ENDDOWNLOADDATA then
                                 local f = io.open(fpath, "r")
                                 if f then
@@ -2519,6 +2742,7 @@ function sampev.onSendCommand(cmd)
                                         sampShowDialog(222, "Обновления TruckHUD", "{FFFFFF}" .. Utf8ToAnsi(text), "Закрыть", "", 0)
                                     end
                                     io.close(f)
+                                    os.remove(fpath)
                                 end
                             end
                         end
@@ -2551,7 +2775,7 @@ function sampev.onSendCommand(cmd)
                 string.format("Авто Доклад в рацию %s", (inifiles.Settings.Report and "активирован" or "деактивирован")),
                 0xFF2f72f7
             )
-            inicfg.save(inifiles, AdressIni)
+            settings_save()
             return false
         end
         if params:lower() == " para" then
@@ -2587,6 +2811,15 @@ function sampev.onSendCommand(cmd)
                 )
             }
         end
+    end
+    if params:lower():find(" server_help") then
+        sampShowDialog(0, 'TruckHUD: Server Help', [[{FFFFFF}   << Основные причины проблем соединения с сервером >>
+
+1. Сервер отключился. Поспрашивайте других дальнобойщиков нет ли у них такой проблемы
+Если у всех такая проблема - значит сервер упал. Сообщите в группу разработчику.
+
+2. У скрипта нет доступа в интернет. Установлен антистиллер.]], 'Закрыть', '', 0)
+        return false
     end
     antiflood = os.clock() * 1000
 end
@@ -2630,24 +2863,24 @@ function ChangeCena(st)
         if workload == 1 then
             if inifiles.Price.UnLoad >= 0 and inifiles.Price.UnLoad < 900 then
                 inifiles.Price.UnLoad = inifiles.Price.UnLoad + 100
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
             end
         else
             if inifiles.Price.Load >= 0 and inifiles.Price.Load < 900 then
                 inifiles.Price.Load = inifiles.Price.Load + 100
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
             end
         end
     else
         if workload == 1 then
             if inifiles.Price.UnLoad > 0 and inifiles.Price.UnLoad <= 900 then
                 inifiles.Price.UnLoad = inifiles.Price.UnLoad - 100
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
             end
         else
             if inifiles.Price.Load > 0 and inifiles.Price.Load <= 900 then
                 inifiles.Price.Load = inifiles.Price.Load - 100
-                inicfg.save(inifiles, AdressIni)
+                settings_save()
             end
         end
     end
@@ -2844,236 +3077,210 @@ end
 --------------------------------------------------------------------------------
 delay_start = 0
 function transponder()
+    new_pair = {}
+    error_array = {}
     while true do
         wait(0)
-
-        delay_start = os.clock()
-        wait(transponder_delay)
-        if getActiveInterior() == 0 then
-            request_table = {}
-            request_table["request"] = 1
-            local ip, port = sampGetCurrentServerAddress()
-            local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
-            x, y, z = getCharCoordinates(playerPed)
-            local result, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
-			
-			local my_car = getCarCharIsUsing(playerPed)
-
-			local carmodel = -1
-			local carhealth = -1
-			
-			if my_car ~= -1 then
-				carmodel = getCarModel(my_car)
-				carhealth = getCarHealth(my_car)
-			end
-			
-            request_table["info"] = {
-                server = ip .. ":" .. tostring(port),
-                sender = sampGetPlayerNickname(myid),
-                pos = {x = x, y = y, z = z},
-                heading = getCharHeading(playerPed),
-                health = getCharHealth(playerPed),
-                pair_mode_name = pair_mode_name,
-                is_truck = isTruckCar(),
-                chtoto_randomnoe = os.clock(),
-                gruz = current_load,
-                skill = inifiles.Trucker.Skill,
-                id = myid,
-                paraid = pair_mode_id,
-				carmodel = carmodel,
-				carhealth = carhealth,
-				tmonitor = inifiles.tmonitor
-            }
-
-            if pair_mode and pair_mode_name ~= nil then
-                request_table["info"]["pair_mode_name"] = pair_mode_name
-            else
-                request_table["info"]["pair_mode_name"] = "____"
-            end
-
-            trailer_handle = 0
-            if isCharInAnyCar(PLAYER_PED) and isTruckCar() then
-                local car = storeCarCharIsInNoSave(PLAYER_PED)
-                local ptr = getCarPointer(car)
-                local trailer = readMemory(ptr + 1224, 4, false)
-                if trailer > 0 then
-                    local trailer_handle = getVehiclePointerHandle(trailer)
-                    local _x, _y, _z = getCarCoordinates(trailer_handle)
-                    request_table["info"]["trailer"] = {
-                        heading = getCarHeading(trailer_handle),
-                        health = getCarHealth(trailer_handle),
-                        model = getCarModel(trailer_handle),
-                        pos = {x = _x, y = _y, z = _z}
+        if script_run and inifiles.Settings.transponder then
+            delay_start = os.clock()
+            repeat
+                wait(0)
+            until os.clock() * 1000 - (delay_start * 1000) > transponder_delay
+            if inifiles.Settings.transponder then
+                local request_table = {}
+                request_table["request"] = 1
+                local ip, port = sampGetCurrentServerAddress()
+                local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+                local x, y, z = getCharCoordinates(playerPed)
+                local result, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+                local myname = sampGetPlayerNickname(myid)
+                
+                request_table["info"] = {
+                    server = ip .. ":" .. tostring(port),
+                    sender = myname,
+                    pos = {x = x, y = y, z = z, heading = getCharHeading(playerPed)},
+                    data = { 
+                        pair_mode_name = pair_mode_name,
+                        is_truck = isTruckCar(),
+                        gruz = current_load,
+                        skill = inifiles.Trucker.Skill,
+                        rank = inifiles.Trucker.Rank,
+                        id = myid,
+                        paraid = pair_mode_id,
+                        timer = timer,
+                        tmonitor = inifiles.tmonitor
                     }
+                }
+                request_table['random'] = tostring(os.clock()):gsub('%.', '')
+
+                if pair_mode and pair_mode_name ~= nil then
+                    request_table["info"]['data']["pair_mode_name"] = pair_mode_name
                 else
-                    request_table["info"]["trailer"] = {}
+                    request_table["info"]['data']["pair_mode_name"] = "____"
                 end
-            else
-                request_table["info"]["trailer"] = {}
-            end
 
-            download_call = 0
-            if os.time() - mon_upd > 5 then
-            	mon_upd = os.time()
-            	request_table = {request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}
-            	download_call = 1
-            end
-            if users_show then
-            	download_call = 3
-            	request_table = {request = 843, server = ip .. ":" .. tostring(port), chtoto_randomnoe = os.clock()}
-            	users_show = false
-            end
-
-            collecting_data = false
-            wait_for_response = true
-            local response_path = os.tmpname()
-            down = false
-            download_id_4 = downloadUrlToFile(
-                "http://185.204.2.156:43136/" .. encodeJson(request_table),
-                response_path,
-                function(id, status, p1, p2)
-					if stop_downloading_4 then
-						stop_downloading_4 = false
-						download_id_4 = nil
-						return false
-					end
-                    if status == dlstatus.STATUS_ENDDOWNLOADDATA then
-                        down = true
+                download_call = 0
+                collecting_data = false
+                wait_for_response = true
+                local response_path = os.tmpname()
+                down = false
+                --setClipboardText("http://185.139.68.104:43136/" .. encodeJson(request_table))
+                download_id_4 = downloadUrlToFile(
+                    "http://185.139.68.104:43136/" .. encodeJson(request_table),
+                    response_path,
+                    function(id, status, p1, p2)
+                        if stop_downloading_4 then
+                            stop_downloading_4 = false
+                            download_id_4 = nil
+                            return false
+                        end
+                        if status == dlstatus.STATUS_ENDDOWNLOADDATA then
+                            down = true
+                            download_id_4 = nil
+                        end
+                        if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                            wait_for_response = false
+                            download_id_4 = nil
+                        end
                     end
-                    if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                        wait_for_response = false
-                    end
+                )
+                while wait_for_response do
+                    wait(10)
                 end
-            )
-            while wait_for_response do
-                wait(10)
+                processing_response = true
+
+                if down and doesFileExist(response_path) then
+                    local f = io.open(response_path, "r")
+                    if f then
+                        local fileText = f:read("*a")
+                        if fileText ~= nil and #fileText > 0 then
+                            info = decodeJson(fileText)
+                            if info == nil then
+                                print("{ff0000}[" .. string.upper(thisScript().name) .. "]: Был получен некорректный ответ от сервера.")
+                            else
+                                if download_call == 0 then
+                                    transponder_delay = info.delay
+                                    response_timestamp = info.timestamp
+                                    if info.base ~= nil then
+                                        base = info.base
+                                        error_message('2', '')
+                                        local minKD = 1000000
+                                        local dialogText = 'Имя[ID]\tСкилл\tФура/Груз\tНапарник\n'
+                                        local tmonitor = {}
+                                        for k,v in pairs(base) do
+                                            if v.pair_mode_name == myname then
+                                                if new_pair[k] == nil then
+                                                    new_pair[k] = true
+                                                    sampAddChatMessage('TruckHUD: Игрок '..k..'['..v.id..'] добавил Вас в режим пары.', -1)
+                                                end
+                                            end
+                                            if new_pair[k] ~= nil and v.pair_mode_name ~= myname then
+                                                sampAddChatMessage('TruckHUD: Игрок '..k..'['..v.id..'] убрал Вас из режима пары.', -1)
+                                                new_pair[k] = nil
+                                            end
+                                            if inifiles.blacklist[k] == nil then
+                                                inifiles.blacklist[k] = false
+                                            end
+                                            if (not inifiles.Settings.blacklist_inversion and inifiles.blacklist[k] == false) or (inifiles.Settings.blacklist_inversion and inifiles.blacklist[k] == true) then
+                                                if v.tmonitor ~= nil and v.tmonitor.lsn ~= nil and tonumber(v.tmonitor.lsn) ~= 0 then
+                                                    local monKD = msk_timestamp - v.tmonitor.time
+                                                    if monKD > 0 then
+                                                        if monKD < minKD then
+                                                            minKD = monKD
+                                                            tmonitor = v.tmonitor
+                                                        end
+                                                    end                                        
+                                                end
+                                            end
+                                        end
+                                        if minKD ~= 1000000 then
+                                            if mon_ctime < tmonitor.time then 
+                                                mon_time = tmonitor.time
+                                                for k, v in pairs(prices_mon) do
+                                                    if tmonitor[k] ~= nil then
+                                                        prices_mon[k] = tmonitor[k]
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+
+                                    if info.result == "para" then
+                                        error_message('2', '')
+                                        pair_timestamp = info.data.timestamp
+                                        base[pair_mode_name].pos = { x = info.data.x, y = info.data.y, z = info.data.z }
+                                        base[pair_mode_name].heading = info.data.heading
+                                        pair_table = base[pair_mode_name] 
+                                        pair_status = 200
+                                        if para_message_send == nil then
+                                            para_message_send = 1
+                                            sampAddChatMessage("Установлен напарник "..pair_mode_name.."["..pair_mode_id.."]"..". Теперь вы можете пользоваться картой.", -1)
+                                            sampAddChatMessage(string.format("Активация в фуре: %s. Без фуры: %s + %s.", inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key2:gsub("VK_", "")), -1)
+                                        end
+                                    elseif info.result == "error" then
+                                        if info.reason ~= nil then
+                                            if info.reason == 403 then
+                                                error_message('2', '')
+                                                pair_status = info.reason
+                                                error_message('1', pair_mode_name.."["..pair_mode_id.."] пока не установил Вас напарником в своем TruckHUD.")
+                                            elseif info.reason == 404 then
+                                                error_message('2', '')
+                                                pair_status = info.reason
+                                                error_message('1', pair_mode_name.."["..pair_mode_id.."] не найден в базе игроков TruckHUD")
+                                            elseif info.reason == 425 then   
+                                                error_message('2', 'Слишком частые запросы на хостинг. Разберитесь с этим или обратитесь за помощью в группу vk.com/rubin.mods')
+                                            end
+                                        end
+                                    end
+                                end
+                                wait_for_response = false
+                                info = nil
+                            end
+                        end
+                        fileText = nil
+                        f:close()
+                        f = nil
+                    end
+                else
+                    error_message('2', 'Не получил ответа от хостинга. Найдите причину с помощью /truck server_help или напишите о проблеме в группу vk.com/rubin.mods.')
+                end
+                if doesFileExist(response_path) then
+                    os.remove(response_path)
+                end
+                request_table = nil
+                processing_response = false
             end
-            processing_response = true
-
-	        if down and doesFileExist(response_path) then
-	            local f = io.open(response_path, "r")
-	            if f then
-	                local fileText = f:read("*a")
-	                if fileText ~= nil and #fileText > 0 then
-	                	info = decodeJson(fileText)
-	                	if info == nil then
-	                        sampAddChatMessage(
-	                            "{ff0000}[" ..
-	                                string.upper(thisScript().name) ..
-	                                    "]: Был получен некорректный ответ от сервера. Работа скрипта завершена.",
-	                            0x348cb2
-	                        )
-	                    else
-	                    	if download_call == 0 then
-								if info.result == "ok" then
-		                            response_timestamp = info.timestamp
-		                            transponder_delay = info.delay
-		                            if info.data ~= nil then
-		                                pair_status = 200
-		                                pair_timestamp = info.data.timestamp
-		                                pair_table = info.data
-		                            end
-		                            if para_message_send == nil then
-		                                para_message_send = 1
-		                                sampAddChatMessage("Установлен напарник "..pair_mode_name.."["..pair_mode_id.."]"..". Теперь вы можете пользоваться картой.", -1)
-		                                sampAddChatMessage(string.format("Активация в фуре: %s. Без фуры: %s + %s.", inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key3:gsub("VK_", ""), inifiles.Settings.Key2:gsub("VK_", "")), -1)
-		                            end
-		                        elseif info.result == "error" then
-		                            transponder_delay = info.delay
-		                            if info.reason ~= nil then
-		                                if info.reason == 403 or info.reason == 404 then
-		                                    pair_status = info.reason
-		                                    error_message(pair_mode_name.."["..pair_mode_id.."] пока не установил Вас напарником в своем TruckHUD.")
-		                                end
-		                            end
-		                        end
-		                    end
-					        if download_call == 1 and inifiles.Settings.MonDownload then
-								local ip, port = sampGetCurrentServerAddress(  )
-							    local sserver = ip .. ":" .. tostring(port)
-
-								local minKD = 1000000
-								local tmonitor = {}
-
-								local bl = black_list('read')
-								for k,v in pairs(info.data.senders) do
-									for i,s in pairs(v.data) do
-									    if sserver == s and v.data.tmonitor ~= nil and v.data.tmonitor.time > (msk_timestamp - 86400) then
-									        monKD = msk_timestamp - v.data.tmonitor.time
-									        if monKD > 0 and bl[v.data.sender] == nil then
-									            if monKD < minKD then
-									            	minKD = monKD
-									            	tmonitor = v.data.tmonitor
-									            end
-									        end
-									    end
-									end	
-								end
-								if minKD ~= 1000000 then
-									if mon_ctime < tmonitor.time then 
-										mon_time = tmonitor.time
-										for k, v in pairs(prices_mon) do
-										    if tmonitor[k] ~= nil then
-										        prices_mon[k] = tmonitor[k]
-										    end
-										end
-									end
-								end
-					        end
-					        if download_call == 3 then
-							    local dialogText = 'Имя[ID]\tСкилл\tФура/Груз\tНапарник\n'
-							    local ip, port = sampGetCurrentServerAddress(  )
-							    local sserver = ip .. ":" .. tostring(port)
-							    local trucker_count = 0
-							    for k,v in pairs(info.data.senders) do
-							        for i,s in pairs(v.data) do
-							            if sserver == s and os.time() - v.timestamp < 60 and v.data.paraid ~= nil then
-							                trucker_count = trucker_count + 1
-							                dialogText = string.format('%s%s[%s]\t%s\t%s\t%s\n', dialogText, v.data.sender, v.data.id, v.data.skill, ( (v.data.         is_truck and 'Да' or 'Нет')..(v.data.gruz == 0 and '/Нет' or (v.data.gruz == 1 and '/Нефть' or (v.data.gruz == 2 and '/Уголь' or (v.data.gruz == 3 and '/Дерево' or '/Рубины')))) ), ( v.data.pair_mode_name == '____' and 'Нет' or v.data.pair_mode_name..'['..v.data.paraid..']'))
-							            end
-							        end	
-							    end
-							    sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
-					        end
-	                        wait_for_response = false
-	                    end
-	                end
-	                f:close()
-	                os.remove(response_path)
-	            end
-	        else
-	            error_message('Сервер не отвечает, напишите о проблеме в группу vk.com/rubin.mods')
-	        end
-            if doesFileExist(response_path) then
-                os.remove(response_path)
-            end
-            processing_response = false
         end
     end
 end
 
-function error_message(text)
-    if error_message_send == nil then
-        error_message_send = 1
-        sampAddChatMessage(text, -1)
+function error_message(key, text)
+    if text ~= '' then
+        if error_array[key] == nil then
+            error_array[key] = true
+            sampAddChatMessage(text, -1)
+        end
+    else
+        if error_array[key] ~= nil then
+            if key == '2' or key == '3' then
+                sampAddChatMessage('Связь с сервером TruckHUD возобновлена.', -1)
+            end
+            error_array[key] = nil
+        end
     end
 end
 
 function count_next()
-    if getActiveInterior() == 0 then
         local count = (transponder_delay - (os.clock() * 1000 - delay_start * 1000)) / 1000
         if count >= 0 then
             return string.format("%0.3fс", count)
         elseif wait_for_response then
-            return " " -- WAITING FOR RESPONSE
+            return "Ожидание ответа" -- WAITING FOR RESPONSE
         elseif processing_response then
-            return " " -- PROCESSING RESPONSE
+            return "Обработка ответа" -- PROCESSING RESPONSE
         else
-            return " " -- PERFOMING REQUEST
+            return "Выполнение запроса" -- PERFOMING REQUEST
         end
-    else
-        return "выйди из инт"
-    end
 end
 
 function dn(nam)
@@ -3146,71 +3353,65 @@ function fastmap()
 
     while true do
         wait(0)
-
-        if sampIsDialogActive() then 
-            dialogActiveClock = os.time() 
-        end
-
-        if  pair_mode and
-            not sampIsDialogActive() and 
-            (os.time() - dialogActiveClock) > 1 and 
-            not sampIsScoreboardOpen() and
-            not isSampfuncsConsoleActive() and 
-            (isKeyDown(vkeys[inifiles.Settings.Key3]) and isKeyDown(vkeys[inifiles.Settings.Key2]) or (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3])))
-        then
-            local x, y = getCharCoordinates(playerPed)
-            if not sampIsChatInputActive() and wasKeyPressed(vkeys[inifiles.Settings.Key6]) then
-                inifiles.map.sqr = not inifiles.map.sqr
-                inicfg.save(inifiles, AdressIni)
+        if inifiles.Settings.transponder and inifiles.Settings.fastmap then
+            if sampIsDialogActive() then
+                dialogActiveClock = os.time() 
             end
-            renderDrawTexture(m1, bX, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m2, bX + size / 4, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m3, bX + 2 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m4, bX + 3 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
 
-            renderDrawTexture(m5, bX, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m6, bX + size / 4, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m7, bX + 2 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m8, bX + 3 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+            if pair_mode and
+                pair_status == 200 and
+                not sampIsDialogActive() and 
+                (os.time() - dialogActiveClock) > 1 and 
+                not sampIsScoreboardOpen() and
+                not isSampfuncsConsoleActive() and 
+               ( (isKeyDown(vkeys[inifiles.Settings.Key3]) and isKeyDown(vkeys[inifiles.Settings.Key2]) or (isTruckCar() and isKeyDown(vkeys[inifiles.Settings.Key3]))))
+            then
+                fastmapshow = true
+                local x, y = getCharCoordinates(playerPed)
+                renderDrawTexture(m1, bX, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m2, bX + size / 4, bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m3, bX + 2 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m4, bX + 3 * (size / 4), bY, size / 4, size / 4, 0, 0xFFFFFFFF)
 
-            renderDrawTexture(m9, bX, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m10, bX + size / 4, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m11, bX + 2 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m12, bX + 3 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m5, bX, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m6, bX + size / 4, bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m7, bX + 2 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m8, bX + 3 * (size / 4), bY + size / 4, size / 4, size / 4, 0, 0xFFFFFFFF)
 
-            renderDrawTexture(m13, bX, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m14, bX + size / 4, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m15, bX + 2 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
-            renderDrawTexture(m16, bX + 3 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m9, bX, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m10, bX + size / 4, bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m11, bX + 2 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m12, bX + 3 * (size / 4), bY + 2 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
 
-            renderDrawBoxWithBorder(bX, bY + size - size / 42, size, size / 45, -1, 2, -2)
+                renderDrawTexture(m13, bX, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m14, bX + size / 4, bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m15, bX + 2 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
+                renderDrawTexture(m16, bX + 3 * (size / 4), bY + 3 * (size / 4), size / 4, size / 4, 0, 0xFFFFFFFF)
 
-            if pair_table ~= {} then
-                if pair_status == 200 then
-                    status_string = string.format( "CODE: %s || Синхронизированы с %s. Данные устарели на: %0.2fc || UPD: %s", pair_status, pair_table["data"]["sender"], response_timestamp - pair_timestamp, count_next() )
-                else
-                    status_string = string.format("CODE: %s || UPD: %s", pair_status, count_next())
+                renderDrawBoxWithBorder(bX, bY + size - size / 42, size, size / 45, -1, 2, -2)
+
+                if pair_table ~= {} then
+                    status_string = string.format( "Синхронизированы с %s. UPD: %s", pair_mode_name, count_next())
                 end
-            end
 
-            renderFontDrawText(font10, status_string, bX, (bY + size - size / 45) - (renderGetFontDrawHeight(font10) / 4), 0xFF00FF00)
-            
-            if isTruckCar() then
-                renderDrawTexture( truck, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed) + 90, -1 )
+                renderFontDrawText(font10, status_string, bX, (bY + size - size / 45) - (renderGetFontDrawHeight(font10) / 4), 0xFF00FF00)
+                
+                if isTruckCar() then
+                    renderDrawTexture( truck, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed) + 90, -1 )
+                else
+                    renderDrawTexture( player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1 )
+                end
+
+                if pair_table ~= nil and pair_table["pos"] ~= nil and pair_table["pos"]["x"] ~= nil then
+                    color = 0xFFdedbd2
+                    if pair_table["is_truck"] then
+                        renderDrawTexture(truck, getX(pair_table["pos"]["x"]), getY(pair_table["pos"]["y"]), iconsize, iconsize, -pair_table["heading"] + 90, -1 )
+                    else
+                        renderDrawTexture(player, getX(pair_table["pos"]["x"]), getY(pair_table["pos"]["y"]), iconsize, iconsize, -pair_table["heading"], -1 )
+                    end
+                end
             else
-                renderDrawTexture( player, getX(x), getY(y), iconsize, iconsize, -getCharHeading(playerPed), -1 )
-            end
-
-            if pair_table["data"] ~= nil and pair_table["data"]["pos"] ~= nil and pair_table["data"]["pos"]["x"] ~= nil then
-                color = 0xFFdedbd2
-                if response_timestamp - pair_timestamp > 5 then
-                    renderFontDrawText( font10, string.format("%.0f?", response_timestamp - pair_timestamp), getX(pair_table["data"]["pos"]["x"]) + 17, getY(pair_table["data"]["pos"]["y"]) + 2, color )
-                end
-                if pair_table["data"]["is_truck"] then
-                    renderDrawTexture( truck, getX(pair_table["data"]["pos"]["x"]), getY(pair_table["data"]["pos"]["y"]), iconsize, iconsize, -pair_table["data"]["heading"] + 90, -1 )
-                else
-                    renderDrawTexture( player, getX(pair_table["data"]["pos"]["x"]), getY(pair_table["data"]["pos"]["y"]), iconsize, iconsize, -pair_table["data"]["heading"], -1 )
-                end
+                fastmapshow = nil
             end
         end
     end
@@ -3225,69 +3426,173 @@ function getY(y)
     y = math.floor(y * -1 + 3000)
     return bY + y * (size / 6000) - iconsize / 2
 end
-
-function black_list(delays)
-	if delays == 'read' then
-		local file = io.open(AdressBlackList, "r")
-		local returns = {}
-    	if file ~= nil then
-    	 	for line in file:lines() do
-    	 		returns[line] = 0
-    	 	end
-    	 	io.close(file)
-    	end
-    	return returns
-	end
-	if delays == 'write' then
-
-	end
-end
  
 function onScriptTerminate(LuaScript, quitGame)
     if LuaScript == thisScript() then
         stop_downloading_1 = true
-		stop_downloading_2 = true
-		stop_downloading_3 = true
-		stop_downloading_4 = true
-		stop_downloading_5 = true
-		for k, v in pairs(pickupLoad) do
-			if v.pickup ~= nil then
-				if doesPickupExist(v.pickup) then
-					removePickup(v.pickup)
-					v.pickup = nil
-				end
-			end
-		end
-		deleteMarkers()
+        stop_downloading_2 = true
+        stop_downloading_3 = true
+        stop_downloading_4 = true
+        stop_downloading_5 = true
+        for k, v in pairs(pickupLoad) do
+            if v.pickup ~= nil then
+                if doesPickupExist(v.pickup) then
+                    removePickup(v.pickup)
+                    v.pickup = nil
+                end
+            end
+        end
+        delete_all__3dTextplayers()
+        deleteMarkers()
     end
 end
 
 function get_time()
-	local adress = os.getenv('TEMP')..'\\time.txt'
-	local url = 'https://alat.specihost.com/unix-time/'
-	gettime = 0
-	downloadUrlToFile(url, adress, function(id, status, p1, p2)
-        if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-        	_time = os.time()
-	        if doesFileExist(adress) then
-            local f = io.open(adress, 'r')
-            	if f then
-	          	  time = f:read('*a')
-	          	  msk_timestamp = tonumber(time:match('^Current Unix Timestamp: <b>(%d+)</b>')) + (timezone or 0) * 60 * 60
-	          	  --sampAddChatMessage(os.date("%X", msk_timestamp), -1)
-	          	  --sampAddChatMessage(os.date("%X", os.time()), -1)
-	          	  f:close()
-	          	  os.remove(adress)
-	        	end
-	    	end
-	    end
-	end)
+    if inifiles.Settings.transponder then
+        local adress = os.getenv('TEMP')..'\\TruckHUD-time.txt'
+        local url = 'http://185.139.68.104/sampbot/msk_timestamp.php'
+        downloadUrlToFile(url, adress, function(id, status, p1, p2)
+            if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                _time = os.time()
+                if doesFileExist(adress) then
+                local f = io.open(adress, 'r')
+                    if f then
+                      local time = f:read('*a')
+                      msk_timestamp = tonumber(time)
+                      f:close()
+                      os.remove(adress)
+                    else
+                        msk_timestamp = os.time()
+                        sampAddChatMessage('TruckHUD: Ошибка получения точного времени. Используется локальное.', -1)
+                    end
+                end
+            end
+            if status == 58 then
+                if msk_timestamp == 0 then
+                    msk_timestamp = os.time()
+                    sampAddChatMessage('TruckHUD: Ошибка получения точного времени. Используется локальное.', -1)
+                end
+            end
+        end)
+    else
+        msk_timestamp = os.time()
+        sampAddChatMessage('TruckHUD: Ошибка получения точного времени. Используется локальное.', -1)
+    end
 
-	repeat wait(0) until msk_timestamp > 0
+    repeat wait(0) until msk_timestamp > 0
 
-	while true do
-		wait(500)
-	    msk_timestamp = msk_timestamp + (os.time() - _time)
-	    _time = os.time()
-	end
+    while true do
+        wait(500)
+        msk_timestamp = msk_timestamp + (os.time() - _time)
+        _time = os.time()
+        if inifiles.Settings.AutoClear then
+            collectgarbage()
+        end
+    end
+end
+
+function split(str, delim, plain)
+    local tokens, pos, plain = {}, 1, not (plain == false) --[[ delimiter is plain text by default ]]
+    repeat
+        local npos, epos = string.find(str, delim, pos, plain)
+        table.insert(tokens, string.sub(str, pos, npos and npos - 1))
+        pos = epos and epos + 1
+    until not pos
+    return tokens
+end
+
+function showTruckers()
+    local dialogText = 'Имя[ID] AFK\tСкилл / Ранг\tФура / Груз\tНапарник\n'
+    local trucker_count = 0
+
+    local _, myid = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    for k,v in pairs(base) do
+        if v.pair_mode_name ~= nil and v.is_truck ~= nil and v.gruz ~= nil and v.skill ~= nil and v.id ~= nil and v.paraid ~= nil and v.timer ~= nil and v.tmonitor ~= nil then
+            if (sampIsPlayerConnected(v.id) or myid == v.id) and sampGetPlayerNickname(v.id) == k then
+                trucker_count = trucker_count + 1
+                local afk = math.ceil(msk_timestamp - v.timestamp)
+                dialogText = string.format('%s%s[%s] %s\t%s / %s\t%s\t%s\n', dialogText, k, v.id, (afk > 10 and '[AFK: '..afk..']' or ''), v.skill, v.rank, ( (v.is_truck and 'Да ' or 'Нет ')..(v.gruz == 0 and '/ Нет' or (v.gruz == 1 and '/ Нефть' or (v.gruz == 2 and '/ Уголь' or (v.gruz == 3 and '/ Дерево' or '/ Рубины')))) ), ( v.pair_mode_name == '____' and 'Нет' or v.pair_mode_name..'['..v.paraid..']'))
+            end
+        end                                   
+    end
+    sampShowDialog(0, 'Дальнобойщики со скриптом в сети: '..trucker_count, (#dialogText == 0 and 'Список пуст' or dialogText), 'Выбрать', 'Закрыть', 5)
+end
+
+function renderTruckers()
+    font_t = renderCreateFont(inifiles.Render.FontName, inifiles.Render.FontSize, inifiles.Render.FontFlag)
+    _3dTextplayers = {}
+    while true do
+        wait(0)
+        if script_run then
+            for id = 0, 999 do
+                if sampIsPlayerConnected(id) then
+                    local nickname = sampGetPlayerNickname(id)
+                    if base[nickname] ~= nil then
+                        local stream, ped = sampGetCharHandleBySampPlayerId(id)
+                        if stream then
+                            if (isCharInModel(ped, 403) or isCharInModel(ped, 514) or isCharInModel(ped, 515)) then
+                                local car = storeCarCharIsInNoSave(ped)
+                                local result, idcar = sampGetVehicleIdByCarHandle(car)
+                                if _3dTextplayers[id] == nil and result then
+                                    _3dTextplayers[id] = sampCreate3dText(' ', -1, 0.0, 0.0, 0.0, 30.0, false, -1, idcar) 
+                                end
+                                if _3dTextplayers[id] ~= nil and result then
+                                    local timer_player = 180 - (base[nickname].timer > 1000 and os.difftime(msk_timestamp, base[nickname].timer) or 181)
+                                    local color = (timer_player <= 0 and inifiles.Render.Color2 or (timer_player <= 10 and 'b50000' or inifiles.Render.Color2))
+                                    local kd_player = (timer_player > 0 
+                                        and 
+                                        string.format('{%s}<< {%s}%d:%02d {%s}>>', inifiles.Render.Color1, color, math.floor(timer_player / 60), timer_player % 60, inifiles.Render.Color1) 
+                                        or 
+                                        string.format('{%s}<< {%s}0:00 {%s}>>', inifiles.Render.Color1, inifiles.Render.Color2, inifiles.Render.Color1)
+                                    )
+                                    local gruz_player = string.format('{%s}%s', inifiles.Render.Color2, 
+                                    (base[nickname].gruz == 0 and 'Нет груза' or (base[nickname].gruz == 1 and 'Нефть' or (base[nickname].gruz == 2 and 'Уголь' or (base[nickname].gruz == 3 and 'Дерево' or 'Рубины'))))
+                                    )
+                                    local para_player = string.format('{%s}%s', inifiles.Render.Color2,
+                                    (base[nickname].pair_mode_name ~= '____' and base[nickname].pair_mode_name..'['..base[nickname].paraid..']' or 'Нет напарника')
+                                    )
+                                    local pair_kd = ''
+                                    if base[nickname].pair_mode_name ~= '____' and base[base[nickname].pair_mode_name] ~= nil then
+                                    local timer_d = 180 - (base[base[nickname].pair_mode_name].timer > 1000 and os.difftime(msk_timestamp, base[base[nickname].pair_mode_name].timer) or 181)
+                                    local color = (timer_d <= 0 and inifiles.Render.Color2 or (timer_d <= 10 and 'b50000' or inifiles.Render.Color2))
+                                    pair_kd = string.format('(%s{%s})', (timer_d > 0 and string.format('{%s}%d:%02d', color, math.floor(timer_d / 60), timer_d % 60) or string.format('{%s}0:00', inifiles.Render.Color2)), inifiles.Render.Color2)
+                                    end
+
+                                    sampSet3dTextString(_3dTextplayers[id], string.format('%s\n%s\n%s %s', kd_player, gruz_player, para_player, pair_kd))
+                                end
+                                if not result and _3dTextplayers[id] ~= nil then
+                                    sampDestroy3dText(_3dTextplayers[id])
+                                    _3dTextplayers[id] = nil
+                                end
+                            else
+                                if _3dTextplayers[id] ~= nil then
+                                    sampDestroy3dText(_3dTextplayers[id])
+                                    _3dTextplayers[id] = nil
+                                end
+                            end
+                        else
+                            if _3dTextplayers[id] ~= nil then
+                                sampDestroy3dText(_3dTextplayers[id])
+                                _3dTextplayers[id] = nil
+                            end
+                        end
+                    end
+                else
+                    if _3dTextplayers[id] ~= nil then
+                        sampDestroy3dText(_3dTextplayers[id])
+                        _3dTextplayers[id] = nil
+                    end
+                end
+            end
+        else
+            delete_all__3dTextplayers()
+        end
+    end
+end
+
+function delete_all__3dTextplayers()
+    for k, v in pairs(_3dTextplayers) do
+        sampDestroy3dText(_3dTextplayers[k])
+        _3dTextplayers[k] = nil
+    end
 end
