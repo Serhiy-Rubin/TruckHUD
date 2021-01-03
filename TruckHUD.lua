@@ -211,6 +211,7 @@ function settings_load()
 [[!mn!Скилл: {FFFFFF}!skill! [!skill_poc!%] [!skill_reys!]!n!Ранг: {FFFFFF}!rang! [!rang_poc!%] [!rang_reys!]!n!!mn!Зарплата:{FFFFFF} !zp_hour!/!max_zp!!n!Прибыль: {FFFFFF}!profit!!n!Рейсы: {FFFFFF}!reys_hour!/!reys_day! [!left_reys!] ]]
         local table_std = {
             Settings = {
+                TruckRender = true,
                 Cruise = false,
                 chat_in_truck = false,
                 blacklist_inversion = false,
@@ -532,6 +533,11 @@ function doDialog()
                 end
                 if str:find("Режим авто загрузки/разгрузки") then
                     inifiles.Settings.AutoOFF = not inifiles.Settings.AutoOFF
+                    settings_save()
+                    ShowDialog1(1)
+                end
+                if str:find("Информация на фурах дальнобойщиков") then
+                    inifiles.Settings.TruckRender = not inifiles.Settings.TruckRender
                     settings_save()
                     ShowDialog1(1)
                 end
@@ -1807,6 +1813,9 @@ function ShowDialog1(int, dtext, dinput, string_or_number, ini1, ini2)
             dialogLine[#dialogLine + 1] =
                 "Чат профсоюза только в фуре\t" .. (inifiles.Settings.chat_in_truck == true and "{59fc30}ON" or "{ff0000}OFF")
         end
+
+        dialogLine[#dialogLine + 1] =
+            "Информация на фурах дальнобойщиков\t" .. (inifiles.Settings.TruckRender == true and "{59fc30}ON" or "{ff0000}OFF")
 
         dialogLine[#dialogLine + 1] =
             "Убрать тюнинг колес с фур\t" .. (inifiles.Settings.Tuning == false and "{59fc30}ON" or "{ff0000}OFF")
@@ -3523,7 +3532,7 @@ function renderTruckers()
     _3dTextplayers = {}
     while true do
         wait(0)
-        if script_run then
+        if script_run and inifiles.Settings.TruckRender then
             for id = 0, 999 do
                 if sampIsPlayerConnected(id) then
                     local nickname = sampGetPlayerNickname(id)
